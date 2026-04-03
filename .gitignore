@@ -8,7 +8,7 @@ dist/
 build/
 .eggs/
 
-# Environnements virtuels
+# Virtual environments
 .venv/
 venv/
 env/
@@ -16,26 +16,29 @@ env/
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb_checkpoints
 
-# Modèles & artefacts lourds
-results/finbert_finetuned/
+# Model artifacts (heavy — do not commit)
+results/models/
+results/*_training/
 *.h5
 *.pt
 *.bin
 *.safetensors
+*.ckpt
 Mymodel.h5
 model.png
 
 # macOS
 .DS_Store
-.AppleDouble
 
-# Données (garder all-data.csv, ignorer les fichiers générés)
+# Data (keep all-data.csv, ignore generated)
 data/*.json
 
 # Logs
 logs/
 *.log
 runs/
-.venv/
+
+# IDE
+.vscode/
+.idea/
