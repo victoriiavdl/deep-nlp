@@ -76,23 +76,27 @@ deep-nlp/
 ## Commands
 
 ```bash
-# Environment
-uv sync                                            # Install all deps (incl. CUDA PyTorch)
+# Environment setup (finds uv automatically, even if not in PATH)
+setup.bat
 
-# Training
-uv run python scripts/train_baselines.py           # CPU, ~10s
-uv run python scripts/train_lstm.py                # CPU/GPU, ~40s
-uv run python scripts/train_transformer.py --all   # GPU required, ~5 min total
-uv run python scripts/train_transformer.py --model FinBERT  # Single model
+# Training (run.bat auto-discovers uv or .venv)
+run.bat scripts/train_baselines.py           # CPU, ~10s
+run.bat scripts/train_lstm.py                # CPU/GPU, ~40s
+run.bat scripts/train_transformer.py --all   # GPU required, ~5 min total
+run.bat scripts/train_transformer.py --model FinBERT  # Single model
 
 # Leaderboard
-uv run python scripts/build_leaderboard.py         # → results/leaderboard.{csv,json,md}
+run.bat scripts/build_leaderboard.py         # -> results/leaderboard.{csv,json,md}
 
 # Demo
-uv run python app.py                               # Gradio on http://localhost:7860
+run.bat app.py                               # Gradio on http://localhost:7860
 
 # Monitor GPU during training
-nvidia-smi -l 5                                    # Refresh every 5s
+nvidia-smi -l 5                              # Refresh every 5s
+
+# Alternative: if uv IS in PATH, you can still use uv directly
+uv sync
+uv run python app.py
 ```
 
 ## Environment
