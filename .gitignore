@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Modèles & artefacts lourds
+results/finbert_finetuned/
+*.h5
+*.pt
+*.bin
+*.safetensors
+Mymodel.h5
+model.png
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Données (garder all-data.csv, ignorer les fichiers générés)
+data/*.json
+
+# Logs
+logs/
+*.log
+runs/
