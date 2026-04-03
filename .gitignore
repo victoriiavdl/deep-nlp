@@ -38,3 +38,4 @@ data/*.json
 logs/
 *.log
 runs/
+.venv/
