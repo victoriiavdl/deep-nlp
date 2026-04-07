@@ -1,21 +1,35 @@
 """Streamlit app — Financial News Sentiment Analysis."""
 
+import functools
 import io
 import json
+import os
 import sys
 import time
 from pathlib import Path
+
+# Fix SSL cert path for curl_cffi on Windows (spaces in OneDrive path break it)
+import certifi
+import shutil
+_cert_src = certifi.where()
+if " " in _cert_src:
+    _cert_dst = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "cacert.pem")
+    if not os.path.exists(_cert_dst) or os.path.getmtime(_cert_src) > os.path.getmtime(_cert_dst):
+        shutil.copy2(_cert_src, _cert_dst)
+    os.environ["CURL_CA_BUNDLE"] = _cert_dst
+    os.environ["REQUESTS_CA_BUNDLE"] = _cert_dst
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from streamlit_javascript import st_javascript
+import streamlit.components.v1 as components
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.config import RESULTS_DIR
-from src.inference import build_pipeline, get_device, load_best_model, predict
+from src.config import MODELS_DIR, RESULTS_DIR
+from src.inference import build_pipeline, get_device, predict
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 # ── Page config ───────────────────────────────────────────────────────
 st.set_page_config(
@@ -28,36 +42,53 @@ st.set_page_config(
 COLORS  = {"positive": "#16a34a", "neutral": "#2563eb", "negative": "#dc2626"}
 SYMBOLS = {"positive": "+", "neutral": "~", "negative": "-"}
 
-EXAMPLES_POSITIVE = [
-    "The company announced record profits and raised its annual dividend by 15%.",
-    "Net sales in the third quarter increased by 12% year-on-year to EUR 205 million.",
-    "Operating profit rose to EUR 13.1 million, representing 7.7% of net sales.",
-    "The board approved a share buyback program worth USD 500 million.",
-]
-EXAMPLES_NEUTRAL = [
-    "Revenue remained flat compared to the previous quarter.",
-    "The company plans to open two new offices in the Nordic region by 2027.",
-    "Annual general meeting will take place on March 15 at the Helsinki headquarters.",
-    "The firm employs approximately 3,200 people across 12 countries.",
-]
-EXAMPLES_NEGATIVE = [
-    "CEO resigned amid an accounting fraud scandal, sending shares tumbling 30%.",
-    "Acquisition talks with a major competitor have reportedly collapsed.",
-    "The firm cut 500 jobs as part of its ongoing restructuring plan.",
-    "Operating loss widened to EUR 8 million due to declining demand.",
+ALL_EXAMPLES = [
+    ("positive", "The company announced record profits and raised its annual dividend by 15%."),
+    ("positive", "Net sales in the third quarter increased by 12% year-on-year to EUR 205 million."),
+    ("positive", "Operating profit rose to EUR 13.1 million, representing 7.7% of net sales."),
+    ("neutral",  "Revenue remained flat compared to the previous quarter."),
+    ("neutral",  "The company plans to open two new offices in the Nordic region by 2027."),
+    ("neutral",  "Annual general meeting will take place on March 15 at the Helsinki headquarters."),
+    ("negative", "CEO resigned amid an accounting fraud scandal, sending shares tumbling 30%."),
+    ("negative", "Acquisition talks with a major competitor have reportedly collapsed."),
+    ("negative", "Operating loss widened to EUR 8 million due to declining demand."),
 ]
 
-# ── Model loading ─────────────────────────────────────────────────────
-@st.cache_resource(show_spinner="Loading FinBERT model...")
-def load_model():
-    model, tokenizer, name = load_best_model()
+PAGES = [
+    ("Analyze",           "M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"),
+    ("Batch Analysis",    "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"),
+    ("Live News",         "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0"),
+    ("Model Leaderboard", "M8 6l4-4 4 4 M4 18h4v-4 M20 18h-4v-4 M12 2v10 M18 22V12 M6 22V12"),
+    ("Dataset",           "M4 7V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"),
+    ("Methodology",       "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z M22 3h-6a4 4 0 0 1-4 4v14a3 3 0 0 0 3-3h7z"),
+    ("Rendu",             "M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z M2 10h20"),
+    ("About",             "M12 12m-10 0a10 10 0 1 0 20 0a10 10 0 1 0-20 0 M12 16v-4 M12 8h.01"),
+]
+
+# ── Detect available models ──────────────────────────────────────────
+AVAILABLE_MODELS = {}
+for name in ["FinBERT", "BERT", "DistilBERT"]:
+    p = MODELS_DIR / name
+    if p.exists() and (p / "config.json").exists():
+        AVAILABLE_MODELS[name] = p
+
+MODEL_META = {
+    "FinBERT":    {"desc": "Financial domain transformer",  "badge": "Best"},
+    "BERT":       {"desc": "General-purpose transformer",   "badge": ""},
+    "DistilBERT": {"desc": "Fast distilled transformer",    "badge": "Fast"},
+}
+
+# ── Model loading (cached per model name) ────────────────────────────
+@st.cache_resource(show_spinner=False)
+def load_model(model_name: str):
+    path = AVAILABLE_MODELS[model_name]
+    tokenizer = AutoTokenizer.from_pretrained(str(path))
+    model = AutoModelForSequenceClassification.from_pretrained(str(path))
     device = get_device()
     pipe = build_pipeline(model, tokenizer, device)
-    return pipe, name, device
+    return pipe, device
 
-pipe, model_name, device = load_model()
-
-# ── Leaderboard data ──────────────────────────────────────────────────
+# ── Leaderboard data ─────────────────────────────────────────────────
 @st.cache_data
 def load_leaderboard():
     path = RESULTS_DIR / "leaderboard.json"
@@ -70,18 +101,18 @@ def load_leaderboard():
 
 lb = load_leaderboard()
 
-# ── LIME explainer (cached) ──────────────────────────────────────────
+# ── LIME ─────────────────────────────────────────────────────────────
 @st.cache_resource
 def get_lime_explainer():
     from lime.lime_text import LimeTextExplainer
     return LimeTextExplainer(class_names=["positive", "neutral", "negative"])
 
-def lime_predict_proba(texts):
-    """Adapter: LIME expects a function that returns (n_samples, n_classes) array."""
+def lime_predict_proba(texts, _pipe):
     results = []
     for text in texts:
-        out = pipe(text[:512], top_k=None)[0]
-        score_map = {r["label"]: r["score"] for r in out}
+        out = _pipe(text[:512])
+        scores_list = out[0] if out and isinstance(out[0], list) else out
+        score_map = {r["label"]: r["score"] for r in scores_list}
         results.append([
             score_map.get("positive", 0),
             score_map.get("neutral", 0),
@@ -89,201 +120,532 @@ def lime_predict_proba(texts):
         ])
     return np.array(results)
 
-def run_lime(text, label):
-    """Run LIME and return list of (word, weight) tuples."""
+def run_lime(text, label, _pipe):
     explainer = get_lime_explainer()
     label_idx = {"positive": 0, "neutral": 1, "negative": 2}[label]
+    predict_fn = functools.partial(lime_predict_proba, _pipe=_pipe)
     exp = explainer.explain_instance(
-        text, lime_predict_proba,
-        num_features=15, num_samples=200,
-        labels=[label_idx],
+        text, predict_fn, num_features=15, num_samples=200, labels=[label_idx],
     )
     return exp.as_list(label=label_idx)
 
-def render_lime_html(text, word_weights, label):
-    """Build HTML with words highlighted by importance."""
-    weight_map = {}
-    for word, weight in word_weights:
-        w_lower = word.lower()
-        weight_map[w_lower] = weight
-
+def render_lime_html(text, word_weights):
+    weight_map = {w.lower(): wt for w, wt in word_weights}
     tokens = text.split()
-    html_parts = []
+    parts = []
     for token in tokens:
         clean = token.strip(".,;:!?\"'()-").lower()
         w = weight_map.get(clean, 0)
         if abs(w) < 0.01:
-            html_parts.append(f'<span style="padding:1px 2px;">{token}</span>')
+            parts.append(f'<span style="padding:1px 2px;">{token}</span>')
         else:
             intensity = min(abs(w) * 5, 0.8)
-            if w > 0:
-                bg = f"rgba(22, 163, 74, {intensity})"
-            else:
-                bg = f"rgba(220, 38, 38, {intensity})"
-            html_parts.append(
-                f'<span style="background:{bg}; padding:1px 4px; border-radius:3px; '
-                f'margin:0 1px;">{token}</span>'
+            bg = f"rgba(22,163,74,{intensity})" if w > 0 else f"rgba(220,38,38,{intensity})"
+            parts.append(
+                f'<span style="background:{bg};padding:2px 5px;border-radius:4px;margin:0 1px;">{token}</span>'
             )
-
-    return (
-        f'<div style="font-size:15px; line-height:2; padding:8px 0;">'
-        + " ".join(html_parts)
-        + '</div>'
-    )
+    return '<div style="font-size:15px;line-height:2.2;padding:8px 0;">' + " ".join(parts) + '</div>'
 
 
-# ── Web Speech API component ─────────────────────────────────────────
-
-SPEECH_HTML = """
-<div id="speech-container" style="text-align:center;">
-    <button id="speech-btn" onclick="toggleSpeech()" style="
-        background: #2563eb; color: white; border: none; border-radius: 50%;
-        width: 56px; height: 56px; font-size: 22px; cursor: pointer;
-        transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    ">&#9673;</button>
-    <div id="speech-status" style="font-size:12px; color:#888; margin-top:6px;">
-        Click to start recording
-    </div>
-    <div id="speech-transcript" style="
-        font-size:14px; color:#ccc; margin-top:10px; min-height:24px;
-        font-style:italic;
-    "></div>
-</div>
-<script>
-let recognition = null;
-let isListening = false;
-let finalTranscript = '';
-
-function toggleSpeech() {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        document.getElementById('speech-status').innerText = 'Speech recognition not supported in this browser.';
-        return;
+# ── Global CSS injection ─────────────────────────────────────────────
+st.markdown("""
+<style>
+    /* ========== FOUNDATION ========== */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    .stApp {
+        background: #f8fafc;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
-    if (isListening) {
-        stopSpeech();
-    } else {
-        startSpeech();
+
+    /* ========== SIDEBAR ========== */
+    section[data-testid="stSidebar"] { background: #0f172a; }
+    section[data-testid="stSidebar"] .stMarkdown,
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] .stMarkdown span,
+    section[data-testid="stSidebar"] .stMarkdown div { color: #e2e8f0; }
+    section[data-testid="stSidebar"] hr { border-color: #1e293b; margin: 12px 0; }
+
+    section[data-testid="stSidebar"] button[kind="secondary"] {
+        background: transparent !important; border: none !important;
+        color: #94a3b8 !important; text-align: left !important;
+        padding: 10px 14px !important; border-radius: 8px !important;
+        font-size: 14px !important; font-weight: 500 !important;
+        transition: all 0.15s !important;
     }
-}
+    section[data-testid="stSidebar"] button[kind="secondary"]:hover {
+        background: #1e293b !important; color: #e2e8f0 !important;
+    }
+    section[data-testid="stSidebar"] button[kind="secondary"].active-nav,
+    section[data-testid="stSidebar"] button[kind="primary"] {
+        background: linear-gradient(135deg, #1e3a5f, #1e293b) !important;
+        color: #fff !important; font-weight: 600 !important; border: none !important;
+        box-shadow: 0 2px 8px rgba(59,130,246,0.15) !important;
+    }
+    section[data-testid="stSidebar"] .stSelectbox label {
+        color: #475569 !important; font-size: 11px !important;
+        text-transform: uppercase; letter-spacing: 1.2px;
+    }
+    section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] {
+        background: #1e293b !important; border-color: #334155 !important;
+    }
+    section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] * { color: #e2e8f0 !important; }
+    .sidebar-label {
+        font-size: 11px; font-weight: 600; color: #475569;
+        text-transform: uppercase; letter-spacing: 1.2px; padding: 16px 0 6px;
+    }
 
-function startSpeech() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.continuous = false;
-    recognition.interimResults = true;
+    /* ========== PAGE HEADER ========== */
+    .page-header {
+        padding: 32px 0 24px; text-align: center;
+        border-bottom: 1px solid #e2e8f0; margin-bottom: 28px;
+    }
+    .page-header h1 {
+        font-size: 28px; font-weight: 800; color: #0f172a;
+        letter-spacing: -0.5px; margin: 0 0 6px;
+    }
+    .page-header p {
+        font-size: 15px; color: #64748b; margin: 0;
+        max-width: 600px; margin-left: auto; margin-right: auto;
+    }
 
-    const btn = document.getElementById('speech-btn');
-    const status = document.getElementById('speech-status');
-    const transcriptDiv = document.getElementById('speech-transcript');
+    /* ========== CARDS ========== */
+    .card {
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+        padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+        transition: box-shadow 0.2s;
+    }
+    .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.08); }
+    .card h3 { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 12px; }
+    .card-muted { background: #f8fafc; border-color: #f1f5f9; }
 
-    btn.style.background = '#dc2626';
-    status.innerText = 'Listening...';
-    isListening = true;
-    finalTranscript = '';
-    transcriptDiv.innerText = '';
+    /* ========== METRICS ========== */
+    [data-testid="stMetric"] {
+        background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+        padding: 18px 20px !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 12px !important; font-weight: 600 !important;
+        text-transform: uppercase; letter-spacing: 0.8px;
+        color: #64748b !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 24px !important; font-weight: 800 !important;
+        color: #0f172a !important;
+    }
 
-    recognition.onresult = function(event) {
-        let interim = '';
-        let final_ = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-                final_ += event.results[i][0].transcript;
-            } else {
-                interim += event.results[i][0].transcript;
-            }
-        }
-        if (final_) finalTranscript += final_;
-        transcriptDiv.innerText = finalTranscript + interim;
-    };
+    /* ========== BUTTONS ========== */
+    .stButton button[kind="primary"] {
+        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+        border: none !important; color: #fff !important;
+        font-weight: 600 !important; font-size: 14px !important;
+        padding: 10px 24px !important; border-radius: 10px !important;
+        box-shadow: 0 2px 8px rgba(59,130,246,0.3) !important;
+        transition: all 0.2s !important; letter-spacing: 0.2px;
+    }
+    .stButton button[kind="primary"]:hover {
+        box-shadow: 0 4px 16px rgba(59,130,246,0.4) !important;
+        transform: translateY(-1px);
+    }
+    .stButton button[kind="secondary"],
+    .stMainMenu button,
+    div[data-testid="stMainMenu"] button {
+        border-radius: 10px !important; font-weight: 500 !important;
+        transition: all 0.15s !important;
+    }
+    /* Example chip buttons (main area only, not sidebar) */
+    .main .stButton button[kind="secondary"] {
+        background: #fff !important; border: 1px solid #e2e8f0 !important;
+        color: #475569 !important; font-size: 12px !important;
+        padding: 8px 14px !important; border-radius: 10px !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+    }
+    .main .stButton button[kind="secondary"]:hover {
+        background: #f1f5f9 !important; border-color: #cbd5e1 !important;
+        color: #1e293b !important;
+    }
 
-    recognition.onend = function() {
-        btn.style.background = '#2563eb';
-        isListening = false;
-        if (finalTranscript.trim()) {
-            status.innerText = 'Transcript ready. Sending...';
-            transcriptDiv.style.color = '#fff';
-            // Send to Streamlit via query params trick
-            const encoded = encodeURIComponent(finalTranscript.trim());
-            window.parent.postMessage({type: 'streamlit:setComponentValue', value: finalTranscript.trim()}, '*');
-        } else {
-            status.innerText = 'No speech detected. Click to try again.';
-        }
-    };
+    /* ========== INPUTS ========== */
+    .stTextArea textarea,
+    .stTextInput input {
+        border: 1.5px solid #e2e8f0 !important; border-radius: 12px !important;
+        font-size: 15px !important; padding: 14px 16px !important;
+        background: #fff !important; color: #1e293b !important;
+        transition: border-color 0.2s, box-shadow 0.2s !important;
+    }
+    .stTextArea textarea:focus,
+    .stTextInput input:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59,130,246,0.12) !important;
+    }
+    .stTextArea textarea::placeholder,
+    .stTextInput input::placeholder {
+        color: #94a3b8 !important;
+    }
 
-    recognition.onerror = function(event) {
-        btn.style.background = '#2563eb';
-        isListening = false;
-        status.innerText = 'Error: ' + event.error + '. Try again.';
-    };
+    /* ========== FILE UPLOADER ========== */
+    [data-testid="stFileUploader"] {
+        border: 2px dashed #cbd5e1 !important; border-radius: 14px !important;
+        padding: 28px !important; background: #fafbfc !important;
+        transition: border-color 0.2s !important;
+    }
+    [data-testid="stFileUploader"]:hover {
+        border-color: #3b82f6 !important; background: #f0f7ff !important;
+    }
 
-    recognition.start();
-}
+    /* ========== TABS ========== */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0; border-bottom: 2px solid #e2e8f0; padding: 0;
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding: 10px 20px !important; font-size: 14px !important;
+        font-weight: 500 !important; color: #64748b !important;
+        border-bottom: 2px solid transparent; margin-bottom: -2px;
+        transition: all 0.15s !important;
+    }
+    .stTabs [data-baseweb="tab"]:hover { color: #1e293b !important; }
+    .stTabs [aria-selected="true"] {
+        color: #1d4ed8 !important; font-weight: 600 !important;
+        border-bottom-color: #3b82f6 !important;
+    }
 
-function stopSpeech() {
-    if (recognition) recognition.stop();
-}
-</script>
-"""
+    /* ========== DATAFRAMES ========== */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #e2e8f0; border-radius: 12px;
+        overflow: hidden;
+    }
+
+    /* ========== ALERTS ========== */
+    [data-testid="stAlert"] {
+        border-radius: 12px !important; font-size: 14px !important;
+        border-left-width: 4px !important;
+    }
+
+    /* ========== PROGRESS ========== */
+    .stProgress > div > div {
+        border-radius: 6px; height: 6px !important;
+    }
+    .stProgress > div > div > div {
+        background: linear-gradient(90deg, #3b82f6, #1d4ed8) !important;
+        border-radius: 6px;
+    }
+
+    /* ========== DOWNLOAD BUTTON ========== */
+    [data-testid="stDownloadButton"] button {
+        background: #fff !important; border: 1.5px solid #e2e8f0 !important;
+        border-radius: 10px !important; font-weight: 600 !important;
+        color: #1e293b !important; transition: all 0.15s !important;
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        border-color: #3b82f6 !important; color: #1d4ed8 !important;
+        box-shadow: 0 2px 8px rgba(59,130,246,0.12) !important;
+    }
+
+    /* ========== DIVIDERS ========== */
+    .main hr {
+        border: none; height: 1px; background: #e2e8f0; margin: 28px 0;
+    }
+
+    /* ========== SECTION TITLES ========== */
+    .section-title {
+        font-size: 15px; font-weight: 700; color: #0f172a;
+        margin: 0 0 16px; padding-bottom: 10px;
+        border-bottom: 2px solid #e2e8f0;
+        letter-spacing: -0.2px;
+    }
+
+    /* ========== SPINNER ========== */
+    .stSpinner > div { border-top-color: #3b82f6 !important; }
+
+    /* ========== SELECTBOX (main area) ========== */
+    .main .stSelectbox [data-baseweb="select"] {
+        background: #fff !important; border: 1.5px solid #e2e8f0 !important;
+        border-radius: 12px !important; transition: border-color 0.2s, box-shadow 0.2s !important;
+    }
+    .main .stSelectbox [data-baseweb="select"]:hover {
+        border-color: #cbd5e1 !important;
+    }
+    .main .stSelectbox [data-baseweb="select"]:focus-within {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59,130,246,0.12) !important;
+    }
+    .main .stSelectbox [data-baseweb="select"] * {
+        color: #1e293b !important;
+    }
+    .main .stSelectbox label {
+        font-size: 13px !important; font-weight: 600 !important;
+        color: #475569 !important;
+    }
+
+    /* Dropdown menu */
+    [data-baseweb="popover"] {
+        border-radius: 12px !important; border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;
+        overflow: hidden !important;
+    }
+    [data-baseweb="popover"] li {
+        font-size: 14px !important; padding: 10px 14px !important;
+        transition: background 0.1s !important;
+    }
+    [data-baseweb="popover"] li:hover {
+        background: #f1f5f9 !important;
+    }
+    [data-baseweb="popover"] li[aria-selected="true"] {
+        background: #eff6ff !important; color: #1d4ed8 !important;
+        font-weight: 600 !important;
+    }
+
+    /* ========== HIDE STREAMLIT DEFAULT ELEMENTS ========== */
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    header[data-testid="stHeader"] { background: transparent; }
+</style>
+""", unsafe_allow_html=True)
 
 
-# ── Sidebar ───────────────────────────────────────────────────────────
+def page_header(title, subtitle=""):
+    """Render a consistent page header across all pages."""
+    sub = f'<p>{subtitle}</p>' if subtitle else ''
+    st.markdown(f'<div class="page-header"><h1>{title}</h1>{sub}</div>', unsafe_allow_html=True)
+
+
+# Shared Plotly layout defaults
+PLOTLY_LAYOUT = dict(
+    plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Inter, -apple-system, sans-serif", color="#334155"),
+    margin=dict(t=16, b=36, l=12, r=12),
+    xaxis=dict(gridcolor="#f1f5f9", zerolinecolor="#e2e8f0"),
+    yaxis=dict(gridcolor="#f1f5f9", zerolinecolor="#e2e8f0"),
+)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# SIDEBAR
+# ══════════════════════════════════════════════════════════════════════
+if "page" not in st.session_state:
+    st.session_state["page"] = "Analyze"
+if "selected_model" not in st.session_state:
+    st.session_state["selected_model"] = list(AVAILABLE_MODELS.keys())[0]
+
 with st.sidebar:
-    st.markdown("## Financial Sentiment Analysis")
-    st.markdown("---")
-    page = st.radio(
-        "Navigation",
-        ["Analyze", "Batch Analysis", "Live News", "Model Leaderboard", "Dataset", "Methodology", "Rendu", "About"],
-        label_visibility="collapsed",
-    )
-    st.markdown("---")
-    st.markdown(f"**Model** : `{model_name}`")
-    st.markdown(f"**Device** : `{device.type.upper()}`")
-    st.markdown(f"**Dataset** : FinancialPhraseBank")
-    st.markdown(f"**Split** : 70 / 10 / 20")
+    # Brand
+    st.markdown("""
+    <div style="text-align:center; padding:20px 0 24px;">
+        <div style="
+            display:inline-flex; align-items:center; justify-content:center;
+            width:44px; height:44px; border-radius:10px;
+            background:linear-gradient(135deg,#3b82f6,#1d4ed8);
+            color:white; font-weight:800; font-size:20px; font-family:monospace;
+            margin-bottom:6px; box-shadow:0 4px 12px rgba(59,130,246,0.3);
+        ">F</div>
+        <div style="font-size:15px; font-weight:700; color:#f1f5f9;">Financial Sentiment</div>
+        <div style="font-size:11px; color:#64748b;">Analysis Dashboard</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Navigation — real st.button calls
+    st.markdown('<div class="sidebar-label">Navigation</div>', unsafe_allow_html=True)
+
+    for page_name, _ in PAGES:
+        is_active = st.session_state["page"] == page_name
+        btn_type = "primary" if is_active else "secondary"
+        if st.button(page_name, key=f"nav_{page_name}", use_container_width=True, type=btn_type):
+            st.session_state["page"] = page_name
+            st.rerun()
+
+    # Load model
+    with st.spinner(f"Loading {st.session_state['selected_model']}..."):
+        pipe, device = load_model(st.session_state["selected_model"])
+    model_name = st.session_state["selected_model"]
+
+    # Status
+    st.markdown('<div class="sidebar-label">Status</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="padding:10px 14px; background:#1e293b; border-radius:8px; font-size:12px;">
+        <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span style="color:#64748b;">Model</span>
+            <span style="color:#e2e8f0; font-weight:600;">{model_name}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span style="color:#64748b;">Device</span>
+            <span style="color:#e2e8f0; font-weight:600;">{device.type.upper()}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span style="color:#64748b;">Dataset</span>
+            <span style="color:#e2e8f0; font-weight:600;">FinancialPhraseBank</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span style="color:#64748b;">Split</span>
+            <span style="color:#e2e8f0; font-weight:600;">70 / 10 / 20</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+page = st.session_state["page"]
 
 # ══════════════════════════════════════════════════════════════════════
 # PAGE 1 — ANALYZE
 # ══════════════════════════════════════════════════════════════════════
 if page == "Analyze":
-    st.title("Analyze a Headline")
-    st.markdown(
-        "Classify a financial headline as **positive**, **neutral**, or **negative** "
-        "using FinBERT — a transformer fine-tuned on financial text."
-    )
-    st.markdown("---")
 
-    # ── Text input ────────────────────────────────────────────────────
+    page_header(
+        "Analyze a Financial Headline",
+        f"Try an example or type your own -- powered by {model_name}",
+    )
+
+    # ── Example chips ────────────────────────────────────────────
+    st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+    chip_cols = st.columns(3, gap="small")
+    for i, (sent, ex) in enumerate(ALL_EXAMPLES):
+        with chip_cols[i % 3]:
+            if st.button(ex, key=f"ex_{i}", use_container_width=True):
+                st.session_state["headline_input"] = ex
+                st.rerun()
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # ── Main: Input left + Result right ──────────────────────────
     col_in, col_out = st.columns([3, 2], gap="large")
 
     with col_in:
-        st.markdown("### Text input")
-        init_val = st.session_state.pop("example", "")
-
-        # Check if voice transcript arrived
-        if "voice_transcript" in st.session_state and st.session_state["voice_transcript"]:
-            init_val = st.session_state.pop("voice_transcript")
-
+        if "headline_input" not in st.session_state:
+            st.session_state["headline_input"] = ""
         headline = st.text_area(
             label="headline",
-            value=init_val,
-            placeholder="Paste or type a financial news headline here...",
-            height=110,
+            placeholder="Type or paste a financial news headline...",
+            height=140,
             label_visibility="collapsed",
+            key="headline_input",
         )
-        c1, c2 = st.columns([2, 1])
-        run   = c1.button("Analyze", type="primary", use_container_width=True)
-        clear = c2.button("Clear", use_container_width=True)
+
+        # Buttons row: Analyze + Model selector + Clear
+        btn_cols = st.columns([3, 2, 1])
+        with btn_cols[0]:
+            run = st.button("Analyze", type="primary", use_container_width=True)
+        with btn_cols[1]:
+            sel_model = st.selectbox(
+                "model",
+                list(AVAILABLE_MODELS.keys()),
+                index=list(AVAILABLE_MODELS.keys()).index(st.session_state["selected_model"]),
+                format_func=lambda m: f"{m} -- {MODEL_META.get(m, {}).get('desc', '')}",
+                label_visibility="collapsed",
+                key="model_sel",
+            )
+            if sel_model != st.session_state["selected_model"]:
+                st.session_state["selected_model"] = sel_model
+                st.rerun()
+        with btn_cols[2]:
+            clear = st.button("Clear", use_container_width=True)
+
         if clear:
-            st.session_state.pop("voice_transcript", None)
+            st.session_state["headline_input"] = ""
             st.rerun()
 
-    with col_out:
-        st.markdown("### Result")
-        result_slot = st.empty()
-        result_slot.info("Enter a headline to begin analysis.")
+        # Voice input: inject a <script> into the PARENT page so that
+        # SpeechRecognition runs in the parent JS context (not an iframe).
+        # This gives it real mic permissions and a valid user-gesture on click.
+        # components.html() is used only as a bootstrap loader (height=0).
+        components.html("""
+<script>
+(function(){
+    var d = window.parent.document;
 
-    # ── Run analysis ──────────────────────────────────────────────
+    // Clean previous injections
+    var ids = ['voice-mic-btn','voice-mic-css','voice-init-script'];
+    ids.forEach(function(id){ var el = d.getElementById(id); if(el) el.remove(); });
+
+    // Pulse animation CSS — injected into parent <head>
+    var css = d.createElement('style');
+    css.id = 'voice-mic-css';
+    css.textContent = '@keyframes vmic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.4)}50%{box-shadow:0 0 0 12px rgba(220,38,38,0)}}';
+    d.head.appendChild(css);
+
+    // Build the main logic as a function, convert to string, inject as
+    // a <script> in the parent document so it executes in parent context.
+    var sc = d.createElement('script');
+    sc.id = 'voice-init-script';
+    sc.textContent = '(' + function(){
+        /* ---- runs in Streamlit parent page context ---- */
+        var ta = document.querySelector('textarea');
+        if(!ta) return;
+
+        // Position the button inside the textarea's Streamlit wrapper
+        var container = ta.closest('[data-testid="stTextArea"]');
+        if(!container) container = ta.parentElement.parentElement;
+        container.style.position = 'relative';
+
+        // Mic button
+        var btn = document.createElement('div');
+        btn.id = 'voice-mic-btn';
+        btn.title = 'Click to speak (Chrome / Edge)';
+        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+        btn.style.cssText = 'position:absolute;bottom:14px;right:14px;z-index:9999;width:36px;height:36px;border-radius:50%;background:#f1f5f9;color:#64748b;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;box-shadow:0 2px 6px rgba(0,0,0,0.1);border:1px solid #e2e8f0;';
+
+        btn.onmouseenter = function(){ if(!this._on) this.style.background='#e2e8f0'; };
+        btn.onmouseleave = function(){ if(!this._on) this.style.background='#f1f5f9'; };
+
+        container.appendChild(btn);
+
+        // React-compatible value setter for Streamlit's textarea
+        var setter = Object.getOwnPropertyDescriptor(
+            HTMLTextAreaElement.prototype, 'value'
+        ).set;
+
+        var rec = null, isOn = false;
+
+        btn.addEventListener('click', function(){
+            var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if(!SR){ alert('Speech recognition not supported. Use Chrome or Edge.'); return; }
+            if(isOn && rec){ rec.stop(); return; }
+
+            rec = new SR();
+            rec.lang = 'en-US';
+            rec.continuous = true;
+            rec.interimResults = true;
+            isOn = true;
+            btn._on = true;
+            btn.style.background = '#fee2e2';
+            btn.style.color = '#dc2626';
+            btn.style.animation = 'vmic-pulse 1.5s ease-in-out infinite';
+            btn.style.borderColor = '#fecaca';
+
+            rec.onresult = function(e){
+                var t = '';
+                for(var i = 0; i < e.results.length; i++){
+                    t += e.results[i][0].transcript;
+                }
+                setter.call(ta, t);
+                ta.dispatchEvent(new Event('input', {bubbles:true}));
+                ta.dispatchEvent(new Event('change', {bubbles:true}));
+            };
+            var stopRec = function(){
+                isOn = false;
+                btn._on = false;
+                btn.style.background = '#f1f5f9';
+                btn.style.color = '#64748b';
+                btn.style.animation = 'none';
+                btn.style.borderColor = '#e2e8f0';
+                // Focus then blur the textarea so Streamlit commits
+                // the value to its internal widget state (session_state)
+                ta.focus();
+                ta.dispatchEvent(new Event('change', {bubbles:true}));
+                ta.blur();
+            };
+            rec.onend = stopRec;
+            rec.onerror = stopRec;
+            rec.start();
+        });
+    } + ')();';
+    d.body.appendChild(sc);
+})();
+</script>
+""", height=0)
+
+    with col_out:
+        result_container = st.container()
+
+    # ── Run analysis ─────────────────────────────────────────────
     analysis_result = None
 
     if run and headline.strip():
@@ -296,237 +658,118 @@ if page == "Analyze":
         col  = COLORS[lbl]
         analysis_result = result
 
-        with col_out:
-            result_slot.empty()
+        with result_container:
             st.markdown(f"""
-            <div style="text-align:center; padding:16px 0 8px;">
-                <div style="font-size:3rem; font-weight:700; color:{col}; font-family:monospace;">
-                    [{SYMBOLS[lbl]}]
+            <div class="card" style="
+                border-color:{col}30; text-align:center;
+                background:linear-gradient(160deg,{col}04,{col}10);
+            ">
+                <div style="
+                    display:inline-flex; align-items:center; justify-content:center;
+                    width:56px; height:56px; border-radius:14px;
+                    background:{col}; color:white;
+                    font-family:monospace; font-size:1.5rem; font-weight:800;
+                    margin-bottom:14px; box-shadow:0 6px 16px {col}30;
+                ">{SYMBOLS[lbl]}</div>
+                <div style="font-size:13px; font-weight:600; color:{col};
+                    text-transform:uppercase; letter-spacing:1px;">{lbl}</div>
+                <div style="font-size:2.4rem; font-weight:800; color:{col}; margin:4px 0 6px;
+                    letter-spacing:-1px;">{conf:.1%}</div>
+                <div style="font-size:12px; color:#94a3b8;">
+                    {model_name} &middot; {device.type.upper()} &middot; {ms:.0f} ms
                 </div>
-                <div style="font-size:1.4rem; font-weight:700; color:{col};">{lbl.capitalize()}</div>
-                <div style="font-size:0.85rem; color:#666; margin-top:4px;">Confidence : {conf:.1%}</div>
             </div>
             """, unsafe_allow_html=True)
 
-            st.markdown("**Class probabilities**")
-            for l, s in sorted(sc.items(), key=lambda x: x[1], reverse=True):
-                st.markdown(f"[{SYMBOLS[l]}] {l.capitalize()}")
-                st.progress(s)
-                st.caption(f"{s:.1%}")
+            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-            st.caption(f"Inference: {ms:.0f} ms · Model: {model_name} · Device: {device.type.upper()}")
+            sorted_scores = sorted(sc.items(), key=lambda x: x[1], reverse=True)
+            bars_html = ""
+            for l, s in sorted_scores:
+                c = COLORS[l]
+                pct = s * 100
+                bars_html += f"""
+                <div style="margin:10px 0;">
+                    <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px;">
+                        <span style="font-weight:600; color:{c};">[{SYMBOLS[l]}] {l.capitalize()}</span>
+                        <span style="color:#64748b; font-weight:600; font-variant-numeric:tabular-nums;">{s:.1%}</span>
+                    </div>
+                    <div style="background:#f1f5f9; border-radius:8px; height:10px; overflow:hidden;">
+                        <div style="background:linear-gradient(90deg,{c},{c}dd); width:{pct}%;
+                            height:100%; border-radius:8px; transition:width 0.5s ease;"></div>
+                    </div>
+                </div>"""
+            st.markdown(f'<div class="card" style="padding:18px 20px;">{bars_html}</div>', unsafe_allow_html=True)
 
     elif run:
-        with col_out:
-            result_slot.warning("Please enter a headline first.")
+        with result_container:
+            st.warning("Please enter a headline first.")
+    else:
+        with result_container:
+            st.markdown(f"""
+            <div class="card card-muted" style="
+                border:2px dashed #e2e8f0; text-align:center; padding:56px 24px;
+            ">
+                <div style="
+                    width:52px; height:52px; border-radius:14px; background:#e2e8f0;
+                    color:#94a3b8; display:inline-flex; align-items:center; justify-content:center;
+                    font-size:22px; font-weight:700; margin-bottom:14px;
+                ">?</div>
+                <div style="font-size:15px; font-weight:700; color:#64748b;">Waiting for input</div>
+                <div style="font-size:13px; color:#94a3b8; margin-top:6px;">
+                    Select an example or type a headline
+                </div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:14px;
+                    background:#f1f5f9; display:inline-block; padding:4px 12px; border-radius:6px;">
+                    {model_name}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
     # ── LIME Explainability ──────────────────────────────────────
     if analysis_result and headline.strip():
         st.markdown("---")
-        st.markdown("### Keyword influence analysis")
+        st.markdown('<div class="section-title">Keyword Influence Analysis</div>', unsafe_allow_html=True)
         st.markdown(
+            '<span style="color:#64748b; font-size:14px;">'
             "Which words contributed most to the prediction? "
-            "Green = pushes toward predicted class, red = pushes against."
+            "Green = pushes toward predicted class, red = pushes against.</span>",
+            unsafe_allow_html=True,
         )
         with st.spinner("Computing word importance (LIME)..."):
             try:
-                word_weights = run_lime(headline, analysis_result["label"])
-                html = render_lime_html(headline, word_weights, analysis_result["label"])
+                word_weights = run_lime(headline, analysis_result["label"], pipe)
+                html = render_lime_html(headline, word_weights)
                 st.markdown(html, unsafe_allow_html=True)
 
-                # Show top words as a bar chart
                 if word_weights:
                     ww_df = pd.DataFrame(word_weights, columns=["word", "weight"])
                     ww_df = ww_df.sort_values("weight")
                     fig_lime = go.Figure(go.Bar(
-                        x=ww_df["weight"],
-                        y=ww_df["word"],
-                        orientation="h",
-                        marker_color=[
-                            "#16a34a" if w > 0 else "#dc2626"
-                            for w in ww_df["weight"]
-                        ],
+                        x=ww_df["weight"], y=ww_df["word"], orientation="h",
+                        marker_color=["#16a34a" if w > 0 else "#dc2626" for w in ww_df["weight"]],
                     ))
                     fig_lime.update_layout(
-                        xaxis_title="Contribution to prediction",
-                        yaxis_title="",
-                        plot_bgcolor="white",
-                        paper_bgcolor="white",
-                        margin=dict(t=10, b=30, l=10, r=10),
+                        **PLOTLY_LAYOUT,
+                        xaxis_title="Contribution to prediction", yaxis_title="",
                         height=max(250, len(ww_df) * 22),
                     )
                     st.plotly_chart(fig_lime, use_container_width=True)
             except Exception as e:
                 st.warning(f"Could not compute explanations: {e}")
 
-    # ── Voice input (Web Speech API) ─────────────────────────────
-    st.markdown("---")
-    st.markdown("### Voice input")
-    st.markdown(
-        "Click the microphone, speak a financial headline in English. "
-        "The transcript appears in real time. Works on Chrome and Edge."
-    )
-
-    # Use streamlit-javascript to get the transcript
-    transcript = st_javascript("""
-    await new Promise((resolve) => {
-        // Check if we already have a running instance
-        if (window._speechResolve) {
-            resolve("");
-            return;
-        }
-
-        const container = document.createElement('div');
-        container.style.textAlign = 'center';
-        container.style.padding = '16px 0';
-
-        const btn = document.createElement('button');
-        btn.innerHTML = '&#9673; Click to speak';
-        btn.style.cssText = 'background:#2563eb; color:white; border:none; border-radius:28px; padding:12px 28px; font-size:15px; cursor:pointer; transition:all 0.2s; box-shadow:0 2px 8px rgba(0,0,0,0.15);';
-
-        const status = document.createElement('div');
-        status.style.cssText = 'font-size:12px; color:#888; margin-top:8px;';
-        status.innerText = 'Click the button, then speak clearly.';
-
-        const transcript = document.createElement('div');
-        transcript.style.cssText = 'font-size:14px; margin-top:10px; min-height:24px; font-style:italic; color:#aaa;';
-
-        container.appendChild(btn);
-        container.appendChild(status);
-        container.appendChild(transcript);
-
-        // Find the iframe body to append to
-        document.body.appendChild(container);
-
-        let finalText = '';
-
-        btn.onclick = () => {
-            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                status.innerText = 'Not supported in this browser. Use Chrome or Edge.';
-                resolve("");
-                return;
-            }
-
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'en-US';
-            recognition.continuous = false;
-            recognition.interimResults = true;
-
-            btn.style.background = '#dc2626';
-            btn.innerHTML = '&#9673; Listening...';
-            status.innerText = 'Speak now...';
-            finalText = '';
-
-            recognition.onresult = (event) => {
-                let interim = '';
-                let final_ = '';
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    if (event.results[i].isFinal) {
-                        final_ += event.results[i][0].transcript;
-                    } else {
-                        interim += event.results[i][0].transcript;
-                    }
-                }
-                if (final_) finalText += final_;
-                transcript.innerText = finalText + interim;
-            };
-
-            recognition.onend = () => {
-                btn.style.background = '#2563eb';
-                btn.innerHTML = '&#9673; Click to speak';
-                if (finalText.trim()) {
-                    status.innerText = 'Transcript captured.';
-                    transcript.style.color = '#fff';
-                    resolve(finalText.trim());
-                } else {
-                    status.innerText = 'No speech detected. Try again.';
-                    resolve("");
-                }
-            };
-
-            recognition.onerror = (event) => {
-                btn.style.background = '#2563eb';
-                btn.innerHTML = '&#9673; Click to speak';
-                status.innerText = 'Error: ' + event.error;
-                resolve("");
-            };
-
-            recognition.start();
-        };
-    });
-    """)
-
-    if transcript and isinstance(transcript, str) and transcript.strip():
-        st.info(f"**Transcript :** {transcript}")
-        t0 = time.time()
-        voice_result = predict(transcript, pipe)
-        ms = (time.time() - t0) * 1000
-        lbl  = voice_result["label"]
-        conf = voice_result["confidence"]
-        sc   = voice_result["scores"]
-        col  = COLORS[lbl]
-
-        st.markdown(f"""
-        <div style="text-align:center; padding:12px 0;">
-            <div style="font-size:2rem; font-weight:700; color:{col}; font-family:monospace;">
-                [{SYMBOLS[lbl]}]
-            </div>
-            <div style="font-size:1.2rem; font-weight:700; color:{col};">{lbl.capitalize()}</div>
-            <div style="font-size:0.8rem; color:#666;">Confidence : {conf:.1%}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        for l, s in sorted(sc.items(), key=lambda x: x[1], reverse=True):
-            st.markdown(f"[{SYMBOLS[l]}] {l.capitalize()}")
-            st.progress(s)
-            st.caption(f"{s:.1%}")
-
-        st.caption(f"Inference: {ms:.0f} ms · Model: {model_name}")
-
-        # LIME for voice result too
-        with st.spinner("Computing word importance (LIME)..."):
-            try:
-                word_weights = run_lime(transcript, voice_result["label"])
-                html = render_lime_html(transcript, word_weights, voice_result["label"])
-                st.markdown(html, unsafe_allow_html=True)
-            except Exception:
-                pass
-
-    # ── Examples ──────────────────────────────────────────────────
-    st.markdown("---")
-    st.markdown("### Example headlines")
-    st.markdown("Click a headline to load it.")
-
-    col_pos, col_neu, col_neg = st.columns(3, gap="medium")
-    examples = [
-        (col_pos, "positive", "[+] Typically Positive", EXAMPLES_POSITIVE),
-        (col_neu, "neutral",  "[~] Typically Neutral",  EXAMPLES_NEUTRAL),
-        (col_neg, "negative", "[-] Typically Negative", EXAMPLES_NEGATIVE),
-    ]
-    for col_el, sentiment, label, exs in examples:
-        with col_el:
-            st.markdown(f"<span style='color:{COLORS[sentiment]}; font-weight:600;'>{label}</span>", unsafe_allow_html=True)
-            for ex in exs:
-                if st.button(ex, key=f"ex_{ex[:25]}", use_container_width=True):
-                    st.session_state["example"] = ex
-                    st.rerun()
-
 
 # ══════════════════════════════════════════════════════════════════════
 # PAGE 2 — BATCH ANALYSIS
 # ══════════════════════════════════════════════════════════════════════
 elif page == "Batch Analysis":
-    st.title("Batch Analysis")
-    st.markdown(
-        "Upload a CSV file containing financial headlines. "
-        "FinBERT will classify each headline and produce a downloadable report."
+    page_header(
+        "Batch Analysis",
+        f"Upload a CSV of financial headlines -- {model_name} will classify each one and produce a report.",
     )
-    st.markdown("---")
 
     uploaded = st.file_uploader(
-        "Upload CSV",
-        type=["csv"],
+        "Upload CSV", type=["csv"],
         help="CSV must contain a column named 'headline'. One headline per row.",
     )
 
@@ -537,7 +780,6 @@ elif page == "Batch Analysis":
             st.error(f"Failed to read CSV: {e}")
             st.stop()
 
-        # Try to find the headline column
         headline_col = None
         for candidate in ["headline", "Headline", "HEADLINE", "text", "Text", "sentence", "title"]:
             if candidate in df_in.columns:
@@ -546,8 +788,8 @@ elif page == "Batch Analysis":
 
         if headline_col is None:
             st.error(
-                f"Could not find a headline column. Found columns: {list(df_in.columns)}. "
-                "Please rename the column containing headlines to **headline**."
+                f"Could not find a headline column. Found: {list(df_in.columns)}. "
+                "Rename the column to **headline**."
             )
             st.stop()
 
@@ -561,9 +803,7 @@ elif page == "Batch Analysis":
             for i, h in enumerate(headlines):
                 r = predict(h, pipe)
                 results.append({
-                    "Headline": h,
-                    "Sentiment": r["label"],
-                    "Confidence": r["confidence"],
+                    "Headline": h, "Sentiment": r["label"], "Confidence": r["confidence"],
                     "P(positive)": r["scores"].get("positive", 0),
                     "P(neutral)": r["scores"].get("neutral", 0),
                     "P(negative)": r["scores"].get("negative", 0),
@@ -572,64 +812,48 @@ elif page == "Batch Analysis":
 
             progress.empty()
             df_out = pd.DataFrame(results)
-
             st.success(f"Analysis complete. {len(df_out)} headlines classified.")
             st.markdown("---")
 
-            # ── Summary metrics ──────────────────────────────────
             counts = df_out["Sentiment"].value_counts()
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Total", len(df_out))
             c2.metric("[+] Positive", int(counts.get("positive", 0)))
             c3.metric("[~] Neutral", int(counts.get("neutral", 0)))
             c4.metric("[-] Negative", int(counts.get("negative", 0)))
-
             st.markdown("---")
 
-            # ── Visualisations ───────────────────────────────────
             col_pie, col_hist = st.columns(2, gap="large")
-
             with col_pie:
-                st.markdown("#### Sentiment distribution")
+                st.markdown('<div class="section-title">Sentiment Distribution</div>', unsafe_allow_html=True)
                 fig_pie = go.Figure(go.Pie(
                     labels=[k.capitalize() for k in ["positive", "neutral", "negative"]],
                     values=[int(counts.get(k, 0)) for k in ["positive", "neutral", "negative"]],
                     marker=dict(colors=[COLORS["positive"], COLORS["neutral"], COLORS["negative"]]),
-                    hole=0.45,
-                    textinfo="label+percent+value",
+                    hole=0.45, textinfo="label+percent+value",
                 ))
-                fig_pie.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10), height=300)
+                fig_pie.update_layout(**PLOTLY_LAYOUT, showlegend=False, height=300)
                 st.plotly_chart(fig_pie, use_container_width=True)
 
             with col_hist:
-                st.markdown("#### Confidence score distribution")
+                st.markdown('<div class="section-title">Confidence Distribution</div>', unsafe_allow_html=True)
                 fig_hist = go.Figure()
                 for sent in ["positive", "neutral", "negative"]:
                     mask = df_out["Sentiment"] == sent
                     if mask.any():
                         fig_hist.add_trace(go.Histogram(
-                            x=df_out.loc[mask, "Confidence"],
-                            name=sent.capitalize(),
-                            marker_color=COLORS[sent],
-                            opacity=0.7,
-                            nbinsx=20,
+                            x=df_out.loc[mask, "Confidence"], name=sent.capitalize(),
+                            marker_color=COLORS[sent], opacity=0.7, nbinsx=20,
                         ))
                 fig_hist.update_layout(
-                    barmode="overlay",
-                    xaxis_title="Confidence",
-                    yaxis_title="Count",
-                    plot_bgcolor="white",
-                    paper_bgcolor="white",
-                    margin=dict(t=10, b=30, l=10, r=10),
-                    height=300,
+                    **PLOTLY_LAYOUT, barmode="overlay",
+                    xaxis_title="Confidence", yaxis_title="Count", height=300,
                 )
                 st.plotly_chart(fig_hist, use_container_width=True)
 
-            # ── Full table ───────────────────────────────────────
-            st.markdown("#### Results table")
+            st.markdown('<div class="section-title">Results Table</div>', unsafe_allow_html=True)
             st.dataframe(df_out, use_container_width=True, height=400)
 
-            # ── Download button ──────────────────────────────────
             csv_buffer = io.StringIO()
             df_out.to_csv(csv_buffer, index=False)
             st.download_button(
@@ -641,21 +865,18 @@ elif page == "Batch Analysis":
 
 
 # ══════════════════════════════════════════════════════════════════════
-# PAGE 3 — LIVE NEWS (Yahoo Finance)
+# PAGE 3 — LIVE NEWS
 # ══════════════════════════════════════════════════════════════════════
 elif page == "Live News":
-    st.title("Live News — Yahoo Finance")
-    st.markdown(
-        "Enter a stock ticker to fetch the latest news headlines from Yahoo Finance "
-        "and analyze their sentiment in real time."
+    page_header(
+        "Live News",
+        "Enter a stock ticker to fetch the latest Yahoo Finance headlines and analyze their sentiment in real time.",
     )
-    st.markdown("---")
 
     col_ticker, col_btn = st.columns([2, 1])
     with col_ticker:
         ticker_input = st.text_input(
-            "Stock ticker",
-            placeholder="e.g. AAPL, TSLA, MSFT, LVMH.PA",
+            "Stock ticker", placeholder="e.g. AAPL, TSLA, MSFT, LVMH.PA",
             label_visibility="collapsed",
         )
     with col_btn:
@@ -676,40 +897,37 @@ elif page == "Live News":
 
                 headlines = []
                 for item in news:
+                    if not isinstance(item, dict):
+                        continue
                     title = None
-                    if isinstance(item, dict):
+                    content = item.get("content")
+                    if isinstance(content, dict):
+                        title = content.get("title")
+                    if not title:
                         title = item.get("title") or item.get("headline")
-                    if title:
-                        headlines.append(title)
+                    if title and isinstance(title, str) and title.strip():
+                        headlines.append(title.strip())
 
                 if not headlines:
                     st.warning(f"No headlines could be extracted for **{ticker_sym}**.")
                     st.stop()
 
                 st.info(f"Found **{len(headlines)}** headlines for **{ticker_sym}**.")
-
             except Exception as e:
                 st.error(f"Failed to fetch news: {e}")
                 st.stop()
 
-        # Analyze each headline
         results = []
         progress = st.progress(0, text="Analyzing headlines...")
         for i, h in enumerate(headlines):
             r = predict(h, pipe)
-            results.append({
-                "Headline": h,
-                "Sentiment": r["label"],
-                "Confidence": r["confidence"],
-            })
+            results.append({"Headline": h, "Sentiment": r["label"], "Confidence": r["confidence"]})
             progress.progress((i + 1) / len(headlines), text=f"Analyzing... {i+1}/{len(headlines)}")
         progress.empty()
 
         df_news = pd.DataFrame(results)
-
         st.markdown("---")
 
-        # ── Summary ──────────────────────────────────────────────
         counts = df_news["Sentiment"].value_counts()
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Headlines", len(df_news))
@@ -717,59 +935,52 @@ elif page == "Live News":
         c3.metric("[~] Neutral", int(counts.get("neutral", 0)))
         c4.metric("[-] Negative", int(counts.get("negative", 0)))
 
-        # Overall sentiment gauge
         pos_pct = counts.get("positive", 0) / len(df_news)
         neg_pct = counts.get("negative", 0) / len(df_news)
-        sentiment_score = pos_pct - neg_pct  # -1 to +1
+        sentiment_score = pos_pct - neg_pct
 
         if sentiment_score > 0.15:
-            overall = "Predominantly Positive"
-            overall_color = COLORS["positive"]
+            overall, overall_color = "Predominantly Positive", COLORS["positive"]
         elif sentiment_score < -0.15:
-            overall = "Predominantly Negative"
-            overall_color = COLORS["negative"]
+            overall, overall_color = "Predominantly Negative", COLORS["negative"]
         else:
-            overall = "Mixed / Neutral"
-            overall_color = COLORS["neutral"]
+            overall, overall_color = "Mixed / Neutral", COLORS["neutral"]
 
         st.markdown(
-            f'<div style="text-align:center; padding:12px; margin:12px 0; '
-            f'border-left:4px solid {overall_color}; background:rgba(0,0,0,0.02);">'
-            f'<span style="font-size:18px; font-weight:600; color:{overall_color};">'
-            f'{ticker_sym} — {overall}</span></div>',
+            f'<div class="card" style="text-align:center; padding:18px 24px; margin:16px 0;'
+            f' border-left:4px solid {overall_color}; background:linear-gradient(135deg,{overall_color}06,{overall_color}10);">'
+            f'<span style="font-size:18px; font-weight:700; color:{overall_color}; letter-spacing:-0.3px;">'
+            f'{ticker_sym} -- {overall}</span></div>',
             unsafe_allow_html=True,
         )
-
         st.markdown("---")
 
-        # ── Distribution chart ───────────────────────────────────
         col_chart, col_table = st.columns([1, 2], gap="large")
-
         with col_chart:
-            st.markdown("#### Sentiment distribution")
+            st.markdown('<div class="section-title">Sentiment Distribution</div>', unsafe_allow_html=True)
             fig = go.Figure(go.Pie(
                 labels=[k.capitalize() for k in ["positive", "neutral", "negative"]],
                 values=[int(counts.get(k, 0)) for k in ["positive", "neutral", "negative"]],
                 marker=dict(colors=[COLORS["positive"], COLORS["neutral"], COLORS["negative"]]),
-                hole=0.45,
-                textinfo="label+percent+value",
+                hole=0.45, textinfo="label+percent+value",
             ))
-            fig.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10), height=300)
+            fig.update_layout(**PLOTLY_LAYOUT, showlegend=False, height=300)
             st.plotly_chart(fig, use_container_width=True)
 
         with col_table:
-            st.markdown("#### Headlines")
+            st.markdown('<div class="section-title">Headlines</div>', unsafe_allow_html=True)
+            rows_html = ""
             for _, row in df_news.iterrows():
                 sent = row["Sentiment"]
                 conf = row["Confidence"]
                 c = COLORS[sent]
-                st.markdown(
-                    f'<div style="padding:6px 0; border-bottom:1px solid #eee;">'
-                    f'<span style="color:{c}; font-weight:600; font-family:monospace;">[{SYMBOLS[sent]}]</span> '
-                    f'{row["Headline"]} '
-                    f'<span style="color:#888; font-size:12px;">({conf:.0%})</span></div>',
-                    unsafe_allow_html=True,
+                rows_html += (
+                    f'<div style="padding:10px 14px; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; gap:10px;">'
+                    f'<span style="color:{c}; font-weight:700; font-family:monospace; font-size:13px; flex-shrink:0;">[{SYMBOLS[sent]}]</span>'
+                    f'<span style="color:#1e293b; font-size:14px; flex:1;">{row["Headline"]}</span>'
+                    f'<span style="color:#94a3b8; font-size:12px; font-weight:600; flex-shrink:0; font-variant-numeric:tabular-nums;">{conf:.0%}</span></div>'
                 )
+            st.markdown(f'<div class="card" style="padding:0; overflow:hidden;">{rows_html}</div>', unsafe_allow_html=True)
 
     elif fetch_btn:
         st.warning("Please enter a ticker symbol.")
@@ -779,12 +990,10 @@ elif page == "Live News":
 # PAGE 4 — MODEL LEADERBOARD
 # ══════════════════════════════════════════════════════════════════════
 elif page == "Model Leaderboard":
-    st.title("Model Leaderboard")
-    st.markdown(
-        "All models trained on the same **70/10/20 stratified split** (seed=42). "
-        "Ranked by **macro-F1** — accounts for class imbalance."
+    page_header(
+        "Model Leaderboard",
+        "All models trained on the same 70/10/20 stratified split (seed=42). Ranked by macro-F1.",
     )
-    st.markdown("---")
 
     if lb.empty:
         st.warning("No results found. Run training scripts first.")
@@ -795,63 +1004,59 @@ elif page == "Model Leaderboard":
         c2.metric("Best Macro-F1", f"{best['f1_macro']:.1%}")
         c3.metric("Best Accuracy", f"{best['accuracy']:.1%}")
         c4.metric("Models Benchmarked", len(lb))
-
         st.markdown("---")
 
         TYPE_COLORS = {"transformer": "#2563eb", "classical": "#f59e0b", "deep_learning": "#dc2626"}
 
         col_bar, col_scatter = st.columns(2, gap="large")
-
         with col_bar:
-            st.markdown("#### Macro-F1 by model")
+            st.markdown('<div class="section-title">Macro-F1 by Model</div>', unsafe_allow_html=True)
             fig = go.Figure()
             for _, row in lb.iterrows():
                 c = TYPE_COLORS.get(row.get("type", ""), "#888")
                 fig.add_trace(go.Bar(
-                    x=[row["model"]], y=[row["f1_macro"]],
-                    marker_color=c,
-                    text=[f"{row['f1_macro']:.1%}"],
-                    textposition="outside",
-                    showlegend=False,
+                    x=[row["model"]], y=[row["f1_macro"]], marker_color=c,
+                    text=[f"{row['f1_macro']:.1%}"], textposition="outside", showlegend=False,
                 ))
             fig.update_layout(
-                yaxis=dict(range=[0, 1.05], tickformat=".0%", gridcolor="#f0f0f0"),
-                xaxis=dict(tickangle=-15),
-                plot_bgcolor="white", paper_bgcolor="white",
-                margin=dict(t=10, b=10, l=10, r=10), height=320, bargap=0.35,
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                font=PLOTLY_LAYOUT["font"],
+                yaxis=dict(range=[0, 1.05], tickformat=".0%", gridcolor="#f1f5f9"),
+                xaxis=dict(tickangle=-15, gridcolor="#f1f5f9"),
+                margin=PLOTLY_LAYOUT["margin"], height=320, bargap=0.35,
             )
             st.plotly_chart(fig, use_container_width=True)
 
         with col_scatter:
-            st.markdown("#### Accuracy vs Macro-F1")
+            st.markdown('<div class="section-title">Accuracy vs Macro-F1</div>', unsafe_allow_html=True)
             fig2 = go.Figure()
             for _, row in lb.iterrows():
                 c = TYPE_COLORS.get(row.get("type", ""), "#888")
                 fig2.add_trace(go.Scatter(
                     x=[row["accuracy"]], y=[row["f1_macro"]],
-                    mode="markers+text",
-                    marker=dict(size=14, color=c),
+                    mode="markers+text", marker=dict(size=14, color=c),
                     text=[row["model"]], textposition="top center",
-                    textfont=dict(size=9),
-                    showlegend=False,
+                    textfont=dict(size=9), showlegend=False,
                 ))
             fig2.update_layout(
-                xaxis=dict(title="Accuracy", tickformat=".0%", gridcolor="#f0f0f0", range=[0.5, 0.97]),
-                yaxis=dict(title="Macro-F1", tickformat=".0%", gridcolor="#f0f0f0", range=[0.2, 1.0]),
-                plot_bgcolor="white", paper_bgcolor="white",
-                margin=dict(t=10, b=40, l=40, r=10), height=320,
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                font=PLOTLY_LAYOUT["font"],
+                xaxis=dict(title="Accuracy", tickformat=".0%", gridcolor="#f1f5f9", range=[0.5, 0.97]),
+                yaxis=dict(title="Macro-F1", tickformat=".0%", gridcolor="#f1f5f9", range=[0.2, 1.0]),
+                margin=dict(t=16, b=40, l=40, r=12), height=320,
             )
             st.plotly_chart(fig2, use_container_width=True)
 
         st.markdown(
-            "<span style='color:#2563eb'>&#9632;</span> Transformer &nbsp;&nbsp;"
-            "<span style='color:#f59e0b'>&#9632;</span> Classical ML &nbsp;&nbsp;"
-            "<span style='color:#dc2626'>&#9632;</span> Deep Learning",
+            '<div style="text-align:center; padding:8px 0; font-size:13px; color:#64748b;">'
+            "<span style='color:#2563eb'>&#9632;</span> Transformer &nbsp;&nbsp;&nbsp;"
+            "<span style='color:#f59e0b'>&#9632;</span> Classical ML &nbsp;&nbsp;&nbsp;"
+            "<span style='color:#dc2626'>&#9632;</span> Deep Learning</div>",
             unsafe_allow_html=True,
         )
         st.markdown("---")
 
-        st.markdown("#### Full benchmark table")
+        st.markdown('<div class="section-title">Full Benchmark Table</div>', unsafe_allow_html=True)
         display = lb.copy()
         type_map = {"classical": "Classical ML", "deep_learning": "Deep Learning", "transformer": "Transformer"}
         display["type"] = display["type"].map(type_map).fillna(display["type"])
@@ -870,7 +1075,7 @@ elif page == "Model Leaderboard":
         st.caption(f"Active model (currently serving): {model_name}")
 
         st.markdown("---")
-        st.markdown("#### Key takeaways")
+        st.markdown('<div class="section-title">Key Takeaways</div>', unsafe_allow_html=True)
         k1, k2 = st.columns(2, gap="large")
         with k1:
             st.success("**FinBERT #1 (0.877 macro-F1)** — Le pre-entrainement sur corpus financier lui permet de comprendre les nuances semantiques du domaine.")
@@ -884,9 +1089,10 @@ elif page == "Model Leaderboard":
 # PAGE 5 — DATASET
 # ══════════════════════════════════════════════════════════════════════
 elif page == "Dataset":
-    st.title("Dataset — FinancialPhraseBank")
-    st.markdown("**Malo et al. (2014)** — 4 846 phrases en anglais extraites de news financieres, annotees par 16 experts.")
-    st.markdown("---")
+    page_header(
+        "Dataset -- FinancialPhraseBank",
+        "Malo et al. (2014) -- 4 846 phrases en anglais extraites de news financieres, annotees par 16 experts.",
+    )
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total phrases", "4 846")
@@ -898,15 +1104,14 @@ elif page == "Dataset":
     col_pie, col_info = st.columns([2, 3], gap="large")
 
     with col_pie:
-        st.markdown("#### Distribution des classes")
+        st.markdown('<div class="section-title">Distribution des classes</div>', unsafe_allow_html=True)
         fig = go.Figure(go.Pie(
             labels=["Neutral", "Positive", "Negative"],
             values=[2879, 1363, 604],
             marker=dict(colors=[COLORS["neutral"], COLORS["positive"], COLORS["negative"]]),
-            hole=0.45,
-            textinfo="label+percent",
+            hole=0.45, textinfo="label+percent",
         ))
-        fig.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10), height=280)
+        fig.update_layout(**PLOTLY_LAYOUT, showlegend=False, height=280)
         st.plotly_chart(fig, use_container_width=True)
 
         st.dataframe(pd.DataFrame({
@@ -916,7 +1121,7 @@ elif page == "Dataset":
         }), use_container_width=True, hide_index=True)
 
     with col_info:
-        st.markdown("#### Tache d'annotation")
+        st.markdown('<div class="section-title">Tache d\'annotation</div>', unsafe_allow_html=True)
         st.markdown("""
         > *"Cette phrase, du point de vue d'un investisseur, donne-t-elle une impression
         positive, negative ou neutre de l'entreprise mentionnee ?"*
@@ -929,21 +1134,24 @@ elif page == "Dataset":
             "mais un **macro-F1 ~ 0** — d'ou l'importance du macro-F1 comme metrique principale."
         )
 
-        st.markdown("#### Split utilise")
+        st.markdown('<div class="section-title">Split utilise</div>', unsafe_allow_html=True)
         st.dataframe(pd.DataFrame({
             "Split": ["Train", "Val", "Test"],
             "Samples": [3391, 485, 970],
             "Share": ["70%", "10%", "20%"],
         }), use_container_width=True, hide_index=True)
 
-        st.markdown("#### Exemples par classe")
+        st.markdown('<div class="section-title">Exemples par classe</div>', unsafe_allow_html=True)
         t1, t2, t3 = st.tabs(["Positive", "Neutral", "Negative"])
         with t1:
-            for ex in EXAMPLES_POSITIVE: st.markdown(f"- {ex}")
+            for s, ex in ALL_EXAMPLES:
+                if s == "positive": st.markdown(f"- {ex}")
         with t2:
-            for ex in EXAMPLES_NEUTRAL: st.markdown(f"- {ex}")
+            for s, ex in ALL_EXAMPLES:
+                if s == "neutral": st.markdown(f"- {ex}")
         with t3:
-            for ex in EXAMPLES_NEGATIVE: st.markdown(f"- {ex}")
+            for s, ex in ALL_EXAMPLES:
+                if s == "negative": st.markdown(f"- {ex}")
 
     st.markdown("---")
     st.caption("Source : Malo, P. et al. (2014). Good debt or bad debt. JASIST, 65(4), 782-796.")
@@ -953,52 +1161,50 @@ elif page == "Dataset":
 # PAGE 6 — METHODOLOGY
 # ══════════════════════════════════════════════════════════════════════
 elif page == "Methodology":
-    st.title("Methodology")
-    st.markdown("Comparaison de **trois generations d'approches NLP** sur le meme protocole d'evaluation.")
-    st.markdown("---")
+    page_header(
+        "Methodology",
+        "Comparaison de trois generations d'approches NLP sur le meme protocole d'evaluation.",
+    )
 
     col_l, col_r = st.columns([3, 2], gap="large")
 
     with col_l:
-        st.markdown("### 1. Classical ML — TF-IDF + Classifier")
-        st.markdown("""
-        Text → vecteurs TF-IDF creux (unigrammes + bigrammes, 20K features, TF sublineaire) → classifieur lineaire.
-
-        **Avantages** : rapide, interpretable, pas de GPU.
-        **Limites** : ignore l'ordre des mots, le contexte, la semantique.
-        """)
-
-        st.markdown("### 2. Deep Learning — Bidirectional LSTM")
-        st.markdown("""
-        Embedding (64d, 15K vocab) → BiLSTM 2 couches → Dense → Softmax.
-
-        **Avantages** : capture l'ordre et les dependances locales.
-        **Limites** : sans pre-entrainement + ~5K exemples → 0% recall sur *negative*.
-        """)
-
-        st.markdown("### 3. Transformers — BERT / DistilBERT / FinBERT")
-        st.markdown("""
-        Pre-entraines sur larges corpus → fine-tuning (5 epochs, lr=2e-5, early stopping).
-
-        **FinBERT** : further pre-entraine sur corpus financier (rapports d'analystes, earnings calls).
-        Comprend les nuances implicites : *restructuring*, *write-down*, *impairment charge*...
-        """)
+        for num, title, body in [
+            ("1", "Classical ML -- TF-IDF + Classifier",
+             "Text -> vecteurs TF-IDF creux (unigrammes + bigrammes, 20K features, TF sublineaire) -> classifieur lineaire.\n\n"
+             "**Avantages** : rapide, interpretable, pas de GPU.\n"
+             "**Limites** : ignore l'ordre des mots, le contexte, la semantique."),
+            ("2", "Deep Learning -- Bidirectional LSTM",
+             "Embedding (64d, 15K vocab) -> BiLSTM 2 couches -> Dense -> Softmax.\n\n"
+             "**Avantages** : capture l'ordre et les dependances locales.\n"
+             "**Limites** : sans pre-entrainement + ~5K exemples -> 0% recall sur *negative*."),
+            ("3", "Transformers -- BERT / DistilBERT / FinBERT",
+             "Pre-entraines sur larges corpus -> fine-tuning (5 epochs, lr=2e-5, early stopping).\n\n"
+             "**FinBERT** : further pre-entraine sur corpus financier (rapports d'analystes, earnings calls). "
+             "Comprend les nuances implicites : *restructuring*, *write-down*, *impairment charge*..."),
+        ]:
+            st.markdown(
+                f'<div class="card" style="margin-bottom:16px; border-left:3px solid #3b82f6;">'
+                f'<h3 style="margin:0 0 8px; font-size:15px; font-weight:700; color:#0f172a;">{num}. {title}</h3></div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(body)
 
     with col_r:
-        st.markdown("### Protocole d'evaluation")
+        st.markdown('<div class="section-title">Protocole d\'evaluation</div>', unsafe_allow_html=True)
         st.info("""
         **Meme split pour tous**
-        70% train / 10% val / 20% test — stratifie, seed=42
+        70% train / 10% val / 20% test -- stratifie, seed=42
 
         **Metrique principale : Macro-F1**
         F1 par classe moyenne equitablement
-        → *negative* (12.5%) = meme poids que *neutral* (59.4%)
+        -> *negative* (12.5%) = meme poids que *neutral* (59.4%)
 
         **Metrique secondaire : Accuracy**
-        Reportee pour reference — trompeuse sur donnees desequilibrees
+        Reportee pour reference -- trompeuse sur donnees desequilibrees
         """)
 
-        st.markdown("### References")
+        st.markdown('<div class="section-title">References</div>', unsafe_allow_html=True)
         for ref in [
             "Malo et al. (2014). *Good debt or bad debt.* JASIST, 65(4).",
             "Araci (2019). *FinBERT.* arXiv:1908.10063.",
@@ -1012,21 +1218,29 @@ elif page == "Methodology":
 # PAGE 7 — RENDU
 # ══════════════════════════════════════════════════════════════════════
 elif page == "Rendu":
-    st.title("Rendu")
-    st.markdown("Slides de presentation et rapport ecrit du projet.")
-    st.markdown("---")
+    page_header(
+        "Rendu",
+        "Slides de presentation et rapport ecrit du projet.",
+    )
 
     col_s, col_r2 = st.columns(2, gap="large")
     with col_s:
-        st.markdown("### Slides de presentation")
-        st.info("Les slides seront ajoutees ici une fois finalisees.")
-
+        st.markdown(
+            '<div class="card" style="text-align:center; padding:40px 24px;">'
+            '<div style="font-size:32px; margin-bottom:12px;">&#x1F4CA;</div>'
+            '<h3 style="margin:0 0 8px;">Slides de presentation</h3>'
+            '<p style="color:#64748b; font-size:14px; margin:0;">Les slides seront ajoutees ici une fois finalisees.</p>'
+            '</div>', unsafe_allow_html=True)
     with col_r2:
-        st.markdown("### Rapport Overleaf")
-        st.info("Le rapport LaTeX (Overleaf) sera ajoute ici une fois finalise.")
+        st.markdown(
+            '<div class="card" style="text-align:center; padding:40px 24px;">'
+            '<div style="font-size:32px; margin-bottom:12px;">&#x1F4DD;</div>'
+            '<h3 style="margin:0 0 8px;">Rapport Overleaf</h3>'
+            '<p style="color:#64748b; font-size:14px; margin:0;">Le rapport LaTeX (Overleaf) sera ajoute ici une fois finalise.</p>'
+            '</div>', unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("### Structure du rapport")
+    st.markdown('<div class="section-title">Structure du rapport</div>', unsafe_allow_html=True)
     st.dataframe(pd.DataFrame({
         "Section": ["Introduction", "Dataset", "Modeles", "Experiences", "Analyse", "Conclusion"],
         "Contenu": [
@@ -1044,37 +1258,36 @@ elif page == "Rendu":
 # PAGE 8 — ABOUT
 # ══════════════════════════════════════════════════════════════════════
 elif page == "About":
-    st.title("About")
-    st.markdown("---")
+    page_header(
+        "About",
+        "Projet Deep Learning / NLP -- Universite Paris 1 Pantheon-Sorbonne.",
+    )
 
     col_a, col_b = st.columns([3, 2], gap="large")
-
     with col_a:
-        st.markdown("### Le projet")
+        st.markdown('<div class="section-title">Le projet</div>', unsafe_allow_html=True)
         st.markdown("""
-        Projet de cours **Deep Learning / NLP** — Universite Paris 1 Pantheon-Sorbonne.
-
         Objectif : comparer plusieurs approches NLP pour la classification de sentiment
         sur des textes financiers, en illustrant la progression des performances de la
         generation bag-of-words aux transformers specialises.
         """)
 
-        st.markdown("### Limitations")
+        st.markdown('<div class="section-title">Limitations</div>', unsafe_allow_html=True)
         st.warning("""
-        - Dataset petit (~4 800 exemples) → generalisation limitee
+        - Dataset petit (~4 800 exemples) -> generalisation limitee
         - News europeennes des annees 2000-2010
         - Ne pas utiliser pour des decisions financieres reelles
         - Performances reduites hors domaine (reseaux sociaux, transcriptions d'appels)
         """)
 
     with col_b:
-        st.markdown("### Details techniques")
+        st.markdown('<div class="section-title">Details techniques</div>', unsafe_allow_html=True)
         st.dataframe(pd.DataFrame({
             "Parametre": ["Modele actif", "Device", "Max tokens", "Split", "Metrique", "Framework", "Env"],
             "Valeur": [model_name, device.type.upper(), "128", "70/10/20", "Macro-F1", "PyTorch + HuggingFace", "uv / Python 3.11"],
         }), use_container_width=True, hide_index=True)
 
-        st.markdown("### References")
+        st.markdown('<div class="section-title">References</div>', unsafe_allow_html=True)
         for ref in [
             "Malo et al. (2014). JASIST, 65(4).",
             "Araci (2019). FinBERT. arXiv:1908.10063.",
