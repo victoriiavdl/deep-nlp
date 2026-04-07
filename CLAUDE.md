@@ -6,9 +6,18 @@
 
 **Financial News Sentiment Analysis** — benchmarking classical ML, deep learning, and transformer models on the FinancialPhraseBank dataset (4,846 financial headlines, 3 classes: positive/neutral/negative).
 
-### Current State (last updated: 2026-04-03)
+### Current State (last updated: 2026-04-07)
 
-The project has been **fully refactored** from a notebook-only structure into a clean, modular, reproducible Python project. All 6 models have been trained and benchmarked. The Gradio demo app has been redesigned with a professional, multi-tab interface (no emojis, custom ASCII markers, leaderboard tab, dataset tab, methodology tab, about tab).
+The project has been **fully refactored** from a notebook-only structure into a clean, modular, reproducible Python project. All 6 models have been trained and benchmarked. Two demo interfaces exist:
+
+- **app.py** — Gradio demo (original, multi-tab, runs on port 7860)
+- **streamlit_app.py** — Streamlit dashboard (victoria branch) with 8 tabs: Analyze, Batch Analysis, Live News, Leaderboard, Dataset, Methodology, Rendu, About
+
+**New features (victoria branch, 2026-04-07):**
+1. **Batch Analysis** — CSV upload → FinBERT prediction per row → pie chart + confidence histogram + CSV download
+2. **Live News** — Yahoo Finance headlines via `yfinance` → real-time sentiment + overall sentiment gauge
+3. **LIME Explainability** — Word importance highlighting (green/red) + bar chart after each prediction
+4. **Web Speech API** — Browser-based voice input via `streamlit-javascript` (Chrome/Edge only)
 
 ## Repository Structure
 
@@ -39,6 +48,7 @@ deep-nlp/
 │   ├── models/                    # Saved model weights (git-IGNORED, heavy)
 │   └── *_training/                # Trainer checkpoints (git-IGNORED, heavy)
 ├── app.py                         # Gradio demo (loads best fine-tuned model)
+├── streamlit_app.py               # Streamlit dashboard (batch, live news, LIME, voice)
 ├── pyproject.toml                 # Dependencies + uv CUDA PyTorch source
 ├── uv.lock                        # Lock file
 ├── .gitignore
@@ -55,6 +65,8 @@ deep-nlp/
 - **PyTorch CUDA**: Installed via `[tool.uv.sources]` pointing to `pytorch-cu128` index (compatible with CUDA 13.0 driver)
 - **Demo model**: FinBERT (best macro-F1), loaded via `src/inference.load_best_model()` with fallback chain: FinBERT → BERT → DistilBERT
 - **App style**: No emojis anywhere. Uses ASCII markers [+] positive, [~] neutral, [-] negative. Professional academic tone. User explicitly requested nothing that looks AI-generated.
+- **Streamlit deps**: `lime`, `yfinance`, `streamlit-javascript`, `plotly` (already present). Removed `audio-recorder-streamlit` and `speechrecognition`.
+- **Branches**: `main` = stable (Gradio app), `victoria` = Streamlit dashboard with new features
 
 ## Benchmark Results (2026-04-03)
 
@@ -88,8 +100,9 @@ run.bat scripts/train_transformer.py --model FinBERT  # Single model
 # Leaderboard
 run.bat scripts/build_leaderboard.py         # -> results/leaderboard.{csv,json,md}
 
-# Demo
+# Demos
 run.bat app.py                               # Gradio on http://localhost:7860
+run.bat -m streamlit run streamlit_app.py    # Streamlit on http://localhost:8501
 
 # Monitor GPU during training
 nvidia-smi -l 5                              # Refresh every 5s
