@@ -844,7 +844,8 @@ if page == "Analyze":
                                 marker_color=["#16a34a" if w > 0 else "#dc2626" for w in ww_df["weight"]],
                             ))
                             fig_lime.update_layout(
-                                **PLOTLY_LAYOUT,
+                                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                                font=PLOTLY_LAYOUT["font"],
                                 xaxis_title="", yaxis_title="",
                                 height=max(200, len(ww_df) * 20),
                                 margin=dict(t=8, b=24, l=8, r=8),
