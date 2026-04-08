@@ -59,10 +59,8 @@ PAGES = [
     ("Batch Analysis",    "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"),
     ("Live News",         "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0"),
     ("Model Leaderboard", "M8 6l4-4 4 4 M4 18h4v-4 M20 18h-4v-4 M12 2v10 M18 22V12 M6 22V12"),
-    ("Dataset",           "M4 7V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"),
-    ("Methodology",       "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z M22 3h-6a4 4 0 0 1-4 4v14a3 3 0 0 0 3-3h7z"),
     ("Rendu",             "M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z M2 10h20"),
-    ("About",             "M12 12m-10 0a10 10 0 1 0 20 0a10 10 0 1 0-20 0 M12 16v-4 M12 8h.01"),
+    ("Project",           "M12 12m-10 0a10 10 0 1 0 20 0a10 10 0 1 0-20 0 M12 16v-4 M12 8h.01"),
 ]
 
 # ── Detect available models ──────────────────────────────────────────
@@ -429,18 +427,28 @@ if "selected_model" not in st.session_state:
     st.session_state["selected_model"] = list(AVAILABLE_MODELS.keys())[0]
 
 with st.sidebar:
-    # Brand
+    # Brand — candlestick chart icon for financial analysis
     st.markdown("""
     <div style="text-align:center; padding:20px 0 24px;">
         <div style="
             display:inline-flex; align-items:center; justify-content:center;
-            width:44px; height:44px; border-radius:10px;
-            background:linear-gradient(135deg,#3b82f6,#1d4ed8);
-            color:white; font-weight:800; font-size:20px; font-family:monospace;
-            margin-bottom:6px; box-shadow:0 4px 12px rgba(59,130,246,0.3);
-        ">F</div>
-        <div style="font-size:15px; font-weight:700; color:#f1f5f9;">Financial Sentiment</div>
-        <div style="font-size:11px; color:#64748b;">Analysis Dashboard</div>
+            width:48px; height:48px; border-radius:12px;
+            background:linear-gradient(135deg,#0ea5e9,#1d4ed8);
+            color:white; margin-bottom:8px;
+            box-shadow:0 4px 16px rgba(14,165,233,0.35);
+        ">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 4v16"/>
+                <rect x="4" y="8" width="4" height="6" rx="0.5" fill="currentColor" stroke="none" opacity="0.9"/>
+                <path d="M12 2v20"/>
+                <rect x="10" y="5" width="4" height="8" rx="0.5" fill="currentColor" stroke="none" opacity="0.9"/>
+                <path d="M18 6v12"/>
+                <rect x="16" y="9" width="4" height="5" rx="0.5" fill="currentColor" stroke="none" opacity="0.9"/>
+            </svg>
+        </div>
+        <div style="font-size:15px; font-weight:700; color:#f1f5f9; letter-spacing:-0.3px;">FinSentiment</div>
+        <div style="font-size:11px; color:#64748b;">NLP Analysis Platform</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -472,12 +480,24 @@ with st.sidebar:
             <span style="color:#e2e8f0; font-weight:600;">{device.type.upper()}</span>
         </div>
         <div style="display:flex; justify-content:space-between; padding:4px 0;">
-            <span style="color:#64748b;">Dataset</span>
-            <span style="color:#e2e8f0; font-weight:600;">FinancialPhraseBank</span>
+            <span style="color:#64748b;">Max tokens</span>
+            <span style="color:#e2e8f0; font-weight:600;">128</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span style="color:#64748b;">Metric</span>
+            <span style="color:#e2e8f0; font-weight:600;">Macro-F1</span>
         </div>
         <div style="display:flex; justify-content:space-between; padding:4px 0;">
             <span style="color:#64748b;">Split</span>
             <span style="color:#e2e8f0; font-weight:600;">70 / 10 / 20</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span style="color:#64748b;">Framework</span>
+            <span style="color:#e2e8f0; font-weight:600;">PyTorch + HF</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:4px 0;">
+            <span style="color:#64748b;">Env</span>
+            <span style="color:#e2e8f0; font-weight:600;">Python 3.11 / uv</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -497,11 +517,13 @@ if page == "Analyze":
     # ── Example chips ────────────────────────────────────────────
     st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
     chip_cols = st.columns(3, gap="small")
+    def _set_example(text):
+        st.session_state["headline_input"] = text
+
     for i, (sent, ex) in enumerate(ALL_EXAMPLES):
         with chip_cols[i % 3]:
-            if st.button(ex, key=f"ex_{i}", use_container_width=True):
-                st.session_state["headline_input"] = ex
-                st.rerun()
+            st.button(ex, key=f"ex_{i}", use_container_width=True,
+                      on_click=_set_example, args=(ex,))
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
@@ -536,11 +558,9 @@ if page == "Analyze":
                 st.session_state["selected_model"] = sel_model
                 st.rerun()
         with btn_cols[2]:
-            clear = st.button("Clear", use_container_width=True)
-
-        if clear:
-            st.session_state["headline_input"] = ""
-            st.rerun()
+            def _clear_input():
+                st.session_state["headline_input"] = ""
+            st.button("Clear", use_container_width=True, on_click=_clear_input)
 
         # Voice input: inject a <script> into the PARENT page so that
         # SpeechRecognition runs in the parent JS context (not an iframe).
@@ -726,37 +746,112 @@ if page == "Analyze":
             </div>
             """, unsafe_allow_html=True)
 
-    # ── LIME Explainability ──────────────────────────────────────
-    if analysis_result and headline.strip():
+    # ── Compare All Models ────────────────────────────────────────
+    st.markdown("---")
+    st.markdown('<div class="section-title">Compare All Models</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<span style="color:#64748b; font-size:14px;">'
+        "Run the same headline through all available models and compare their predictions side by side.</span>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    compare_text = headline.strip() if headline.strip() else None
+    if compare_text:
+        compare_btn = st.button("Compare all models", type="primary")
+    else:
+        compare_btn = False
+        st.info("Enter a headline above to enable model comparison.")
+
+    if compare_btn and compare_text:
+        model_cols = st.columns(len(AVAILABLE_MODELS), gap="medium")
+        all_results = {}
+
+        for idx, (mname, mpath) in enumerate(AVAILABLE_MODELS.items()):
+            with st.spinner(f"Running {mname}..."):
+                m_pipe, m_dev = load_model(mname)
+                t0 = time.time()
+                res = predict(compare_text, m_pipe)
+                ms = (time.time() - t0) * 1000
+                all_results[mname] = res
+
+            lbl, conf, sc = res["label"], res["confidence"], res["scores"]
+            col = COLORS[lbl]
+
+            with model_cols[idx]:
+                # Result card
+                st.markdown(f"""
+                <div class="card" style="border-color:{col}30; text-align:center;
+                    background:linear-gradient(160deg,{col}04,{col}10); padding:20px 16px;">
+                    <div style="font-size:13px; font-weight:700; color:#0f172a; margin-bottom:10px;">{mname}</div>
+                    <div style="display:inline-flex; align-items:center; justify-content:center;
+                        width:44px; height:44px; border-radius:12px;
+                        background:{col}; color:white;
+                        font-family:monospace; font-size:1.2rem; font-weight:800;
+                        margin-bottom:10px; box-shadow:0 4px 12px {col}30;">{SYMBOLS[lbl]}</div>
+                    <div style="font-size:12px; font-weight:600; color:{col};
+                        text-transform:uppercase; letter-spacing:1px;">{lbl}</div>
+                    <div style="font-size:1.8rem; font-weight:800; color:{col}; margin:2px 0;
+                        letter-spacing:-1px;">{conf:.1%}</div>
+                    <div style="font-size:11px; color:#94a3b8;">{ms:.0f} ms</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Score bars
+                bars_html = ""
+                for l, s in sorted(sc.items(), key=lambda x: x[1], reverse=True):
+                    c = COLORS[l]
+                    pct = s * 100
+                    bars_html += f"""
+                    <div style="margin:6px 0;">
+                        <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:3px;">
+                            <span style="font-weight:600; color:{c};">[{SYMBOLS[l]}]</span>
+                            <span style="color:#64748b; font-weight:600;">{s:.1%}</span>
+                        </div>
+                        <div style="background:#f1f5f9; border-radius:6px; height:6px; overflow:hidden;">
+                            <div style="background:{c}; width:{pct}%; height:100%; border-radius:6px;"></div>
+                        </div>
+                    </div>"""
+                st.markdown(f'<div class="card" style="padding:12px 14px; margin-top:8px;">{bars_html}</div>',
+                            unsafe_allow_html=True)
+
+        # LIME comparison
         st.markdown("---")
-        st.markdown('<div class="section-title">Keyword Influence Analysis</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Keyword Influence Analysis (LIME)</div>', unsafe_allow_html=True)
         st.markdown(
             '<span style="color:#64748b; font-size:14px;">'
-            "Which words contributed most to the prediction? "
-            "Green = pushes toward predicted class, red = pushes against.</span>",
+            "Which words push each model toward its prediction? "
+            "Green = supports, red = opposes.</span>",
             unsafe_allow_html=True,
         )
-        with st.spinner("Computing word importance (LIME)..."):
-            try:
-                word_weights = run_lime(headline, analysis_result["label"], pipe)
-                html = render_lime_html(headline, word_weights)
-                st.markdown(html, unsafe_allow_html=True)
 
-                if word_weights:
-                    ww_df = pd.DataFrame(word_weights, columns=["word", "weight"])
-                    ww_df = ww_df.sort_values("weight")
-                    fig_lime = go.Figure(go.Bar(
-                        x=ww_df["weight"], y=ww_df["word"], orientation="h",
-                        marker_color=["#16a34a" if w > 0 else "#dc2626" for w in ww_df["weight"]],
-                    ))
-                    fig_lime.update_layout(
-                        **PLOTLY_LAYOUT,
-                        xaxis_title="Contribution to prediction", yaxis_title="",
-                        height=max(250, len(ww_df) * 22),
-                    )
-                    st.plotly_chart(fig_lime, use_container_width=True)
-            except Exception as e:
-                st.warning(f"Could not compute explanations: {e}")
+        lime_cols = st.columns(len(AVAILABLE_MODELS), gap="medium")
+        for idx, (mname, _) in enumerate(AVAILABLE_MODELS.items()):
+            with lime_cols[idx]:
+                st.markdown(f"**{mname}**")
+                with st.spinner("LIME..."):
+                    try:
+                        m_pipe, _ = load_model(mname)
+                        res = all_results[mname]
+                        ww = run_lime(compare_text, res["label"], m_pipe)
+                        html = render_lime_html(compare_text, ww)
+                        st.markdown(html, unsafe_allow_html=True)
+
+                        if ww:
+                            ww_df = pd.DataFrame(ww, columns=["word", "weight"]).sort_values("weight")
+                            fig_lime = go.Figure(go.Bar(
+                                x=ww_df["weight"], y=ww_df["word"], orientation="h",
+                                marker_color=["#16a34a" if w > 0 else "#dc2626" for w in ww_df["weight"]],
+                            ))
+                            fig_lime.update_layout(
+                                **PLOTLY_LAYOUT,
+                                xaxis_title="", yaxis_title="",
+                                height=max(200, len(ww_df) * 20),
+                                margin=dict(t=8, b=24, l=8, r=8),
+                            )
+                            st.plotly_chart(fig_lime, use_container_width=True)
+                    except Exception as e:
+                        st.warning(f"LIME failed: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1074,148 +1169,9 @@ elif page == "Model Leaderboard":
         st.dataframe(display, use_container_width=True)
         st.caption(f"Active model (currently serving): {model_name}")
 
-        st.markdown("---")
-        st.markdown('<div class="section-title">Key Takeaways</div>', unsafe_allow_html=True)
-        k1, k2 = st.columns(2, gap="large")
-        with k1:
-            st.success("**FinBERT #1 (0.877 macro-F1)** — Le pre-entrainement sur corpus financier lui permet de comprendre les nuances semantiques du domaine.")
-            st.success("**DistilBERT > BERT** — Avec ~5K exemples, le modele allege generalise mieux que BERT complet.")
-        with k2:
-            st.info("**Baselines : accuracy trompeuse** — 72% accuracy mais 0.60 macro-F1. Ces modeles predisent surtout *neutral*.")
-            st.error("**BiLSTM : 0% recall sur *negative*** — Sans pre-entrainement, le modele ne generalise pas sur la classe minoritaire.")
-
 
 # ══════════════════════════════════════════════════════════════════════
-# PAGE 5 — DATASET
-# ══════════════════════════════════════════════════════════════════════
-elif page == "Dataset":
-    page_header(
-        "Dataset -- FinancialPhraseBank",
-        "Malo et al. (2014) -- 4 846 phrases en anglais extraites de news financieres, annotees par 16 experts.",
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total phrases", "4 846")
-    c2.metric("Classes", "3")
-    c3.metric("Annotateurs", "16")
-    c4.metric("Langue", "Anglais")
-
-    st.markdown("---")
-    col_pie, col_info = st.columns([2, 3], gap="large")
-
-    with col_pie:
-        st.markdown('<div class="section-title">Distribution des classes</div>', unsafe_allow_html=True)
-        fig = go.Figure(go.Pie(
-            labels=["Neutral", "Positive", "Negative"],
-            values=[2879, 1363, 604],
-            marker=dict(colors=[COLORS["neutral"], COLORS["positive"], COLORS["negative"]]),
-            hole=0.45, textinfo="label+percent",
-        ))
-        fig.update_layout(**PLOTLY_LAYOUT, showlegend=False, height=280)
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.dataframe(pd.DataFrame({
-            "Classe": ["[~] Neutral", "[+] Positive", "[-] Negative"],
-            "Nombre": [2879, 1363, 604],
-            "Part": ["59.4%", "28.1%", "12.5%"],
-        }), use_container_width=True, hide_index=True)
-
-    with col_info:
-        st.markdown('<div class="section-title">Tache d\'annotation</div>', unsafe_allow_html=True)
-        st.markdown("""
-        > *"Cette phrase, du point de vue d'un investisseur, donne-t-elle une impression
-        positive, negative ou neutre de l'entreprise mentionnee ?"*
-
-        Seules les phrases avec **accord majoritaire** sont incluses.
-        """)
-
-        st.warning(
-            "Un modele predisant toujours **'neutral'** obtiendrait **59% d'accuracy** "
-            "mais un **macro-F1 ~ 0** — d'ou l'importance du macro-F1 comme metrique principale."
-        )
-
-        st.markdown('<div class="section-title">Split utilise</div>', unsafe_allow_html=True)
-        st.dataframe(pd.DataFrame({
-            "Split": ["Train", "Val", "Test"],
-            "Samples": [3391, 485, 970],
-            "Share": ["70%", "10%", "20%"],
-        }), use_container_width=True, hide_index=True)
-
-        st.markdown('<div class="section-title">Exemples par classe</div>', unsafe_allow_html=True)
-        t1, t2, t3 = st.tabs(["Positive", "Neutral", "Negative"])
-        with t1:
-            for s, ex in ALL_EXAMPLES:
-                if s == "positive": st.markdown(f"- {ex}")
-        with t2:
-            for s, ex in ALL_EXAMPLES:
-                if s == "neutral": st.markdown(f"- {ex}")
-        with t3:
-            for s, ex in ALL_EXAMPLES:
-                if s == "negative": st.markdown(f"- {ex}")
-
-    st.markdown("---")
-    st.caption("Source : Malo, P. et al. (2014). Good debt or bad debt. JASIST, 65(4), 782-796.")
-
-
-# ══════════════════════════════════════════════════════════════════════
-# PAGE 6 — METHODOLOGY
-# ══════════════════════════════════════════════════════════════════════
-elif page == "Methodology":
-    page_header(
-        "Methodology",
-        "Comparaison de trois generations d'approches NLP sur le meme protocole d'evaluation.",
-    )
-
-    col_l, col_r = st.columns([3, 2], gap="large")
-
-    with col_l:
-        for num, title, body in [
-            ("1", "Classical ML -- TF-IDF + Classifier",
-             "Text -> vecteurs TF-IDF creux (unigrammes + bigrammes, 20K features, TF sublineaire) -> classifieur lineaire.\n\n"
-             "**Avantages** : rapide, interpretable, pas de GPU.\n"
-             "**Limites** : ignore l'ordre des mots, le contexte, la semantique."),
-            ("2", "Deep Learning -- Bidirectional LSTM",
-             "Embedding (64d, 15K vocab) -> BiLSTM 2 couches -> Dense -> Softmax.\n\n"
-             "**Avantages** : capture l'ordre et les dependances locales.\n"
-             "**Limites** : sans pre-entrainement + ~5K exemples -> 0% recall sur *negative*."),
-            ("3", "Transformers -- BERT / DistilBERT / FinBERT",
-             "Pre-entraines sur larges corpus -> fine-tuning (5 epochs, lr=2e-5, early stopping).\n\n"
-             "**FinBERT** : further pre-entraine sur corpus financier (rapports d'analystes, earnings calls). "
-             "Comprend les nuances implicites : *restructuring*, *write-down*, *impairment charge*..."),
-        ]:
-            st.markdown(
-                f'<div class="card" style="margin-bottom:16px; border-left:3px solid #3b82f6;">'
-                f'<h3 style="margin:0 0 8px; font-size:15px; font-weight:700; color:#0f172a;">{num}. {title}</h3></div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(body)
-
-    with col_r:
-        st.markdown('<div class="section-title">Protocole d\'evaluation</div>', unsafe_allow_html=True)
-        st.info("""
-        **Meme split pour tous**
-        70% train / 10% val / 20% test -- stratifie, seed=42
-
-        **Metrique principale : Macro-F1**
-        F1 par classe moyenne equitablement
-        -> *negative* (12.5%) = meme poids que *neutral* (59.4%)
-
-        **Metrique secondaire : Accuracy**
-        Reportee pour reference -- trompeuse sur donnees desequilibrees
-        """)
-
-        st.markdown('<div class="section-title">References</div>', unsafe_allow_html=True)
-        for ref in [
-            "Malo et al. (2014). *Good debt or bad debt.* JASIST, 65(4).",
-            "Araci (2019). *FinBERT.* arXiv:1908.10063.",
-            "Devlin et al. (2019). *BERT.* NAACL-HLT.",
-            "Vaswani et al. (2017). *Attention Is All You Need.* NeurIPS.",
-        ]:
-            st.markdown(f"- {ref}")
-
-
-# ══════════════════════════════════════════════════════════════════════
-# PAGE 7 — RENDU
+# PAGE 5 — RENDU
 # ══════════════════════════════════════════════════════════════════════
 elif page == "Rendu":
     page_header(
@@ -1239,27 +1195,13 @@ elif page == "Rendu":
             '<p style="color:#64748b; font-size:14px; margin:0;">Le rapport LaTeX (Overleaf) sera ajoute ici une fois finalise.</p>'
             '</div>', unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown('<div class="section-title">Structure du rapport</div>', unsafe_allow_html=True)
-    st.dataframe(pd.DataFrame({
-        "Section": ["Introduction", "Dataset", "Modeles", "Experiences", "Analyse", "Conclusion"],
-        "Contenu": [
-            "Contexte, problematique, objectifs",
-            "FinancialPhraseBank, statistiques, desequilibre",
-            "Description des 6 approches benchmarkees",
-            "Protocole, hyperparametres, resultats",
-            "Comparaison, interpretation, limites",
-            "Bilan, perspectives",
-        ],
-    }), use_container_width=True, hide_index=True)
-
 
 # ══════════════════════════════════════════════════════════════════════
-# PAGE 8 — ABOUT
+# PAGE 7 — PROJECT
 # ══════════════════════════════════════════════════════════════════════
-elif page == "About":
+elif page == "Project":
     page_header(
-        "About",
+        "Project",
         "Projet Deep Learning / NLP -- Universite Paris 1 Pantheon-Sorbonne.",
     )
 
@@ -1280,18 +1222,35 @@ elif page == "About":
         - Performances reduites hors domaine (reseaux sociaux, transcriptions d'appels)
         """)
 
-    with col_b:
-        st.markdown('<div class="section-title">Details techniques</div>', unsafe_allow_html=True)
-        st.dataframe(pd.DataFrame({
-            "Parametre": ["Modele actif", "Device", "Max tokens", "Split", "Metrique", "Framework", "Env"],
-            "Valeur": [model_name, device.type.upper(), "128", "70/10/20", "Macro-F1", "PyTorch + HuggingFace", "uv / Python 3.11"],
-        }), use_container_width=True, hide_index=True)
-
         st.markdown('<div class="section-title">References</div>', unsafe_allow_html=True)
         for ref in [
-            "Malo et al. (2014). JASIST, 65(4).",
-            "Araci (2019). FinBERT. arXiv:1908.10063.",
-            "Devlin et al. (2019). BERT. NAACL-HLT.",
-            "Vaswani et al. (2017). NeurIPS.",
+            "Malo et al. (2014). *Good debt or bad debt.* JASIST, 65(4).",
+            "Araci (2019). *FinBERT.* arXiv:1908.10063.",
+            "Devlin et al. (2019). *BERT.* NAACL-HLT.",
+            "Vaswani et al. (2017). *Attention Is All You Need.* NeurIPS.",
         ]:
             st.markdown(f"- {ref}")
+
+    with col_b:
+        st.markdown('<div class="section-title">Dataset -- FinancialPhraseBank</div>', unsafe_allow_html=True)
+        st.markdown("Malo et al. (2014) -- 4 846 phrases en anglais, annotees par 16 experts.")
+
+        c1, c2 = st.columns(2)
+        c1.metric("Phrases", "4 846")
+        c2.metric("Classes", "3")
+
+        fig = go.Figure(go.Pie(
+            labels=["Neutral (59.4%)", "Positive (28.1%)", "Negative (12.5%)"],
+            values=[2879, 1363, 604],
+            marker=dict(colors=[COLORS["neutral"], COLORS["positive"], COLORS["negative"]]),
+            hole=0.45, textinfo="label+percent",
+        ))
+        fig.update_layout(**PLOTLY_LAYOUT, showlegend=False, height=260)
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown('<div class="section-title">Split utilise</div>', unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame({
+            "Split": ["Train", "Val", "Test"],
+            "Samples": [3391, 485, 970],
+            "Share": ["70%", "10%", "20%"],
+        }), use_container_width=True, hide_index=True)

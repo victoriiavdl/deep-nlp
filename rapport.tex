@@ -1,0 +1,443 @@
+\documentclass[12pt, a4paper]{article}
+
+% ── Packages ────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage{parskip}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\definecolor{paris1blue}{RGB}{0,61,121}
+\hypersetup{colorlinks=true, linkcolor=paris1blue, citecolor=paris1blue, urlcolor=paris1blue}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  xleftmargin=1em,
+  framexleftmargin=0.5em,
+}
+
+% ── Header/Footer ───────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{paris1blue}{Analyse de Sentiment Financier}}
+\fancyhead[R]{\small\textcolor{paris1blue}{Majed \& Vidal}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\Large\bfseries\color{paris1blue}}{}{0em}{}
+\titleformat{\subsection}{\large\bfseries\color{paris1blue!80}}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{}{0em}{}
+
+\onehalfspacing
+
+% ── Metadata ────────────────────────────────────────────────────────
+\title{
+  \vspace{-1cm}
+  {\large Universit\'e Paris 1 Panth\'eon-Sorbonne}\\
+  {\large Master IASD --- Deep Learning / NLP}\\[1cm]
+  {\LARGE\bfseries\color{paris1blue} Analyse de Sentiment sur Textes Financiers}\\[0.3cm]
+  {\large Benchmarking Classical ML, Deep Learning et Transformers}
+}
+\author{
+  Houssem \textsc{Majed} \and Victoria \textsc{Vidal}
+}
+\date{Avril 2026}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+Ce rapport presente un projet de comparaison de six modeles de classification
+de sentiment appliques a des textes financiers. Nous avons travaille sur le
+FinancialPhraseBank, un jeu de donnees de 4\,846 phrases annotees par des experts
+du domaine. Notre objectif etait d'evaluer trois generations d'approches NLP
+(classiques, deep learning, transformers) sur un meme protocole experimental,
+puis de construire un dashboard interactif de demonstration. FinBERT, un
+transformer pre-entraine sur un corpus financier, obtient les meilleurs resultats
+avec un macro-F1 de 87.7\%.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ════════════════════════════════════════════════════════════════════
+\section{Introduction}
+% ════════════════════════════════════════════════════════════════════
+
+Les marches financiers generent chaque jour un volume considerable de textes sous
+forme de communiques de presse, de rapports d'analystes, de depeches Reuters ou
+encore de transcriptions de conference calls. Pouvoir extraire automatiquement le
+sentiment vehicule par ces textes represente un enjeu concret pour les professionnels
+de la finance, que ce soit pour alimenter des strategies de trading algorithmique ou
+simplement pour synthetiser l'actualite d'une entreprise.
+
+Notre projet s'inscrit dans ce cadre. L'idee de depart etait assez simple : prendre
+un jeu de donnees de reference dans le domaine, y entrainer plusieurs modeles allant
+du plus basique au plus sophistique, et observer concretement comment les performances
+evoluent d'une generation d'approches NLP a la suivante. Nous voulions aussi aller
+au-dela du simple benchmarking en construisant un outil de demonstration complet, avec
+un dashboard web permettant de tester les modeles en conditions reelles.
+
+Le choix des trois families de modeles n'est pas arbitraire. Les approches classiques
+a base de TF-IDF representent l'etat de l'art d'il y a une dizaine d'annees. Les
+reseaux recurrents comme le BiLSTM ont marque la transition vers le deep learning
+en NLP. Et les transformers, depuis BERT en 2018, ont fondamentalement change la
+donne en introduisant le pre-entrainement massif suivi du fine-tuning sur la tache
+cible.
+
+% ════════════════════════════════════════════════════════════════════
+\section{Dataset}
+% ════════════════════════════════════════════════════════════════════
+
+\subsection{FinancialPhraseBank}
+
+Le jeu de donnees que nous avons utilise est le FinancialPhraseBank, publie par
+Malo et al. en 2014 dans le Journal of the Association for Information Science and
+Technology. Il contient 4\,846 phrases en anglais extraites de communiques financiers
+d'entreprises europeennes, principalement finlandaises.
+
+Chaque phrase a ete annotee par un panel de 16 experts en finance. La consigne
+d'annotation etait la suivante : ``Cette phrase, du point de vue d'un investisseur,
+donne-t-elle une impression positive, negative ou neutre de l'entreprise mentionnee ?''
+Seules les phrases pour lesquelles une majorite d'annotateurs (plus de 50\%) s'est
+accordee sur une classe sont incluses dans le dataset final.
+
+\subsection{Distribution des classes}
+
+La distribution des classes presente un desequilibre notable. La classe neutre domine
+avec 2\,879 phrases (59.4\%), suivie de la classe positive avec 1\,363 phrases (28.1\%).
+La classe negative ne represente que 604 phrases, soit 12.5\% du total. Ce desequilibre
+a des consequences directes sur l'evaluation des modeles : un classificateur naif qui
+predit systematiquement ``neutre'' obtiendrait deja 59\% d'accuracy, mais un macro-F1
+proche de zero.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{lrr}
+    \toprule
+    Classe   & Nombre & Part \\
+    \midrule
+    Neutral  & 2\,879 & 59.4\% \\
+    Positive & 1\,363 & 28.1\% \\
+    Negative &    604 & 12.5\% \\
+    \midrule
+    Total    & 4\,846 & 100\% \\
+    \bottomrule
+  \end{tabular}
+  \caption{Distribution des classes dans le FinancialPhraseBank.}
+\end{table}
+
+C'est precisement pour cette raison que nous avons retenu le macro-F1 comme metrique
+principale. Contrairement a l'accuracy, le macro-F1 calcule la moyenne des F1-scores
+de chaque classe de maniere equitable, ce qui donne autant de poids a la classe
+negative (12.5\%) qu'a la classe neutre (59.4\%).
+
+\subsection{Split des donnees}
+
+Nous avons divise les donnees en trois ensembles avec un split stratifie (seed=42)
+pour garantir la reproductibilite et une representation proportionnelle de chaque
+classe dans chaque sous-ensemble.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{lrr}
+    \toprule
+    Split      & Samples & Part \\
+    \midrule
+    Train      & 3\,391  & 70\% \\
+    Validation &    485  & 10\% \\
+    Test       &    970  & 20\% \\
+    \bottomrule
+  \end{tabular}
+  \caption{Repartition du split train/val/test.}
+\end{table}
+
+Ce meme split est utilise pour tous les modeles sans exception, ce qui garantit
+que les comparaisons sont equitables.
+
+% ════════════════════════════════════════════════════════════════════
+\section{Modeles developpes}
+% ════════════════════════════════════════════════════════════════════
+
+\subsection{Approche classique : TF-IDF + classifieurs lineaires}
+
+La premiere famille de modeles que nous avons implementee represente l'approche
+la plus traditionnelle en NLP. Le principe est de transformer chaque texte en un
+vecteur creux via TF-IDF (Term Frequency-Inverse Document Frequency), puis
+d'entrainer un classifieur lineaire sur ces representations.
+
+Nous avons utilise des unigrammes et des bigrammes, avec un vocabulaire plafonne
+a 20\,000 features et une ponderation TF sublineaire. Deux classifieurs ont ete
+testes : la regression logistique (avec regularisation L2 et solver lbfgs) et le
+Naive Bayes multinomial (alpha=0.1).
+
+L'avantage principal de ces modeles est leur rapidite : l'entrainement prend moins
+d'une seconde sur CPU. Ils sont aussi relativement interpretables. Leur limite
+fondamentale est qu'ils traitent le texte comme un sac de mots, ignorant
+completement l'ordre des termes et le contexte dans lequel ils apparaissent.
+
+\subsection{Deep Learning : BiLSTM}
+
+Pour la deuxieme approche, nous avons implemente un reseau de neurones recurrent
+bidirectionnel. L'architecture se compose d'une couche d'embedding (dimension 64,
+vocabulaire de 15\,000 tokens), suivie de deux couches BiLSTM (128 unites chacune),
+d'une couche dense, et enfin d'un softmax pour la classification.
+
+L'entrainement a ete effectue sur 20 epochs avec un batch size de 32, en utilisant
+l'optimiseur Adam. Nous avons mis en place un early stopping sur la loss de
+validation pour eviter le sur-apprentissage. Le temps d'entrainement est d'environ
+40 secondes, que ce soit sur CPU ou GPU.
+
+Sur le papier, le BiLSTM devrait capturer l'ordre des mots et les dependances
+sequentielles mieux que l'approche TF-IDF. En pratique, les resultats ont ete
+decevants, comme nous le verrons dans la section resultats. Le modele n'a pas
+reussi a generaliser correctement, en particulier sur la classe negative.
+
+\subsection{Transformers : BERT, DistilBERT, FinBERT}
+
+La troisieme et derniere famille de modeles repose sur l'architecture Transformer,
+introduite par Vaswani et al. en 2017 et popularisee par BERT (Devlin et al., 2019).
+Le principe est de partir d'un modele pre-entraine sur un tres large corpus de
+textes generiques, puis de le fine-tuner sur notre tache specifique.
+
+Nous avons fine-tune trois variantes. BERT (``base-uncased'') est le modele original
+avec 110 millions de parametres, pre-entraine sur BookCorpus et Wikipedia. DistilBERT
+est une version distillee de BERT, 40\% plus legere (66 millions de parametres) tout
+en conservant environ 97\% de ses performances sur les benchmarks generiques. FinBERT
+est une version de BERT qui a subi un pre-entrainement supplementaire sur un corpus
+de textes financiers (rapports d'analystes, earnings calls, communiques de presse).
+Ce pre-entrainement additionnel lui permet de comprendre les nuances propres au
+vocabulaire financier, comme les termes ``restructuring'', ``write-down'' ou
+``impairment charge'' qui ont une connotation negative specifique au domaine.
+
+Pour les trois modeles, les hyperparametres de fine-tuning sont identiques : 5 epochs,
+learning rate de 2e-5, avec early stopping sur la performance de validation. Nous
+avons du mettre en place plusieurs optimisations GPU pour faire tourner l'entrainement
+sur notre carte graphique (RTX 5070 Laptop, 8 Go de VRAM) : precision mixte fp16,
+gradient checkpointing pour BERT et FinBERT (qui sont plus gourmands en memoire),
+gradient accumulation, et un plafonnement de l'utilisation VRAM a 85\% pour eviter
+les erreurs de memoire.
+
+% ════════════════════════════════════════════════════════════════════
+\section{Resultats}
+% ════════════════════════════════════════════════════════════════════
+
+\subsection{Tableau comparatif}
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{clcccc}
+    \toprule
+    Rang & Modele & Accuracy & Macro-F1 & Type & Temps \\
+    \midrule
+    1 & \textbf{FinBERT}    & 88.1\% & \textbf{87.7\%} & Transformer   & 82s  \\
+    2 & DistilBERT           & 86.8\% & 86.0\%           & Transformer   & 51s  \\
+    3 & BERT                 & 85.5\% & 83.8\%           & Transformer   & 111s \\
+    4 & TF-IDF + NaiveBayes  & 71.3\% & 62.7\%           & Classical     & <1s  \\
+    5 & TF-IDF + LogReg      & 72.4\% & 60.1\%           & Classical     & <1s  \\
+    6 & BiLSTM               & 63.7\% & 37.3\%           & Deep Learning & 41s  \\
+    \bottomrule
+  \end{tabular}
+  \caption{Benchmark des 6 modeles sur le split de test (970 exemples).}
+\end{table}
+
+\subsection{Analyse des resultats}
+
+Les resultats montrent une hierarchie assez nette. FinBERT arrive en tete avec un
+macro-F1 de 87.7\%, ce qui confirme l'apport du pre-entrainement specifique au
+domaine financier. L'ecart avec BERT generique (+3.9 points de macro-F1) est
+significatif et illustre bien l'interet d'adapter le modele au vocabulaire cible.
+
+Un resultat surprenant est la performance de DistilBERT (86.0\%), qui depasse BERT
+complet (83.8\%) malgre un nombre de parametres inferieur de 40\%. Notre hypothese
+est que sur un petit dataset comme le FinancialPhraseBank, un modele plus compact
+est moins susceptible d'overfitter. DistilBERT est aussi nettement plus rapide a
+fine-tuner (51s contre 111s pour BERT).
+
+Les baselines classiques montrent un phenomene interessant : leur accuracy est
+correcte (71-72\%) mais leur macro-F1 est bien plus faible (60-63\%). Cet ecart
+s'explique par le fait que ces modeles predisent majoritairement ``neutre'', ce qui
+leur donne une bonne accuracy grace a la prevalence de cette classe, mais les fait
+echouer sur les classes minoritaires.
+
+Le cas le plus parlant est celui du BiLSTM, qui obtient le pire macro-F1 du benchmark
+(37.3\%). En analysant les predictions, nous avons constate qu'il obtenait un recall
+de 0\% sur la classe negative. Sans pre-entrainement et avec seulement 5\,000
+exemples d'entrainement, le reseau recurrent n'a tout simplement pas assez de
+donnees pour apprendre les patterns de chaque classe, surtout la classe minoritaire.
+
+\subsection{Enseignements}
+
+Le principal enseignement de ce benchmark est le role crucial du pre-entrainement
+dans un contexte de faible volume de donnees. Les transformers pre-entraines
+surpassent largement les approches non pre-entrainees, et le pre-entrainement
+specialise (FinBERT) apporte un gain supplementaire. Ce constat est coherent avec
+la litterature recente en NLP : le paradigme ``pre-train then fine-tune'' est
+particulierement efficace quand le dataset cible est petit.
+
+% ════════════════════════════════════════════════════════════════════
+\section{Dashboard et fonctionnalites}
+% ════════════════════════════════════════════════════════════════════
+
+\subsection{Architecture du dashboard}
+
+Pour rendre nos modeles accessibles et demonstrables, nous avons developpe un
+dashboard web en utilisant Streamlit. L'interface se compose de plusieurs pages
+accessibles via un menu de navigation lateral. Le design a ete entierement
+personnalise avec un systeme de CSS injecte, comprenant une sidebar sombre, des
+cartes avec bordures et ombres, et une typographie Inter pour un rendu professionnel.
+
+Le modele actif est selectionnable directement depuis la page d'analyse, a cote
+des boutons d'action. Le chargement des modeles est mis en cache grace a
+\texttt{st.cache\_resource}, ce qui evite de recharger les poids a chaque interaction.
+
+\subsection{Analyse individuelle et comparaison multi-modeles}
+
+La page principale permet deux modes d'utilisation. Le premier est l'analyse
+individuelle : l'utilisateur saisit ou dicte une phrase, choisit un modele, et
+obtient la prediction avec les scores de confiance pour chaque classe. Le second
+mode est la comparaison multi-modeles, qui fait tourner la meme phrase dans les
+trois transformers disponibles et affiche les resultats cote a cote. Ce mode
+inclut egalement une analyse LIME (Local Interpretable Model-Agnostic Explanations)
+pour chaque modele, ce qui permet de voir quels mots ont le plus influence la
+prediction de chacun.
+
+\subsection{Batch Analysis}
+
+La page Batch Analysis permet de traiter un fichier CSV complet. L'utilisateur
+uploade un fichier contenant une colonne de headlines, et le systeme classifie
+chaque ligne avec le modele actif. Les resultats sont presentes sous forme de
+metriques synthetiques (nombre par classe), de graphiques (camembert de distribution,
+histogramme de confiance), d'un tableau detaille, et d'un bouton de telechargement
+CSV.
+
+\subsection{Live News via Yahoo Finance}
+
+Pour aller au-dela des donnees statiques, nous avons integre une fonctionnalite
+d'analyse en temps reel. L'utilisateur entre un ticker boursier (par exemple AAPL
+pour Apple) et le systeme utilise la librairie \texttt{yfinance} pour recuperer les
+dernieres headlines d'actualite associees a ce titre. Chaque headline est ensuite
+classifiee par le modele actif, et un score de sentiment global est calcule en
+faisant la difference entre la proportion de headlines positives et negatives.
+
+Le principal defi technique a ete l'extraction des titres depuis la structure de
+donnees renvoyee par l'API yfinance, qui varie selon les versions et les tickers.
+Nous avons implemente un parsing robuste qui gere les differents formats possibles.
+
+\subsection{Entree vocale}
+
+La derniere fonctionnalite notable est l'entree vocale. L'idee etait de permettre
+a l'utilisateur de dicter une headline plutot que de la taper, a la maniere des
+interfaces conversationnelles modernes. L'implementation repose sur la Web Speech
+API du navigateur (compatible Chrome et Edge).
+
+Le defi principal etait lie a l'architecture de Streamlit : tous les composants
+HTML personnalises sont rendus dans des iframes sandboxees qui n'ont pas acces au
+microphone du navigateur. Notre premiere tentative avec \texttt{streamlit-javascript}
+a echoue car le code s'executait dans le contexte de l'iframe. La solution finale
+utilise \texttt{components.html()} comme un simple bootstrap pour injecter un
+element \texttt{<script>} dans le document parent de Streamlit. Ce script s'execute
+dans le contexte de la page principale, ce qui lui donne acces au microphone et
+permet de satisfaire l'exigence de ``user gesture'' de Chrome. La transcription est
+ensuite injectee dans le textarea via le setter React natif de l'element HTML, suivi
+d'evenements synthetiques pour que Streamlit prenne en compte la nouvelle valeur.
+
+% ════════════════════════════════════════════════════════════════════
+\section{Difficultes rencontrees}
+% ════════════════════════════════════════════════════════════════════
+
+Tout au long du projet, nous avons fait face a un certain nombre de difficultes
+techniques que nous souhaitons documenter ici.
+
+La premiere difficulte concernait la gestion de la memoire GPU. Le fine-tuning de
+BERT et FinBERT (110 millions de parametres chacun) sur une carte avec 8 Go de
+VRAM necessitait des optimisations specifiques. Nous avons du activer la precision
+mixte fp16, le gradient checkpointing (qui echange du temps de calcul contre de la
+memoire), la gradient accumulation pour simuler des batch sizes plus grands, et un
+plafonnement de l'allocation memoire a 85\% de la VRAM disponible. Sans ces mesures,
+l'entrainement echouait systematiquement avec des erreurs CUDA out-of-memory.
+
+La deuxieme difficulte etait liee a l'installation de PyTorch avec support CUDA
+sur Windows. La commande standard \texttt{pip install torch} installe une version
+CPU-only. Il a fallu configurer un index de paquets specifique (\texttt{pytorch-cu128})
+dans le fichier \texttt{pyproject.toml} via la directive \texttt{[tool.uv.sources]}
+pour obtenir une version compatible avec notre driver CUDA.
+
+La troisieme difficulte, et probablement la plus chronophage, a ete l'implementation
+de l'entree vocale dans Streamlit. Nous avons explore et abandonne plusieurs pistes
+avant de trouver la solution d'injection dans le contexte parent. Le probleme est
+que les iframes Streamlit ont un attribut \texttt{sandbox} qui bloque l'acces au
+microphone, et que les permissions du navigateur exigent que la creation du
+\texttt{SpeechRecognition} se fasse dans le bon contexte JavaScript avec un geste
+utilisateur explicite.
+
+Enfin, la synchronisation entre les modifications JavaScript du DOM et l'etat interne
+de Streamlit a pose des problemes subtils. Quand on modifie la valeur d'un textarea
+via JavaScript, Streamlit ne detecte pas automatiquement le changement. Nous avons du
+utiliser le setter natif du prototype \texttt{HTMLTextAreaElement}, dispatcher des
+evenements synthetiques \texttt{input} et \texttt{change}, et utiliser des callbacks
+\texttt{on\_click} plutot que des affectations directes au \texttt{session\_state}
+pour contourner les restrictions de Streamlit sur la modification de l'etat apres
+l'instanciation d'un widget.
+
+% ════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+% ════════════════════════════════════════════════════════════════════
+
+Ce projet nous a permis de concretiser et comparer trois generations d'approches
+NLP sur une tache reelle de classification de sentiment financier. Le resultat
+principal est sans ambiguite : FinBERT domine le benchmark avec un macro-F1 de
+87.7\%, confirmant que le pre-entrainement specifique au domaine est le facteur
+le plus determinant pour la performance sur un petit dataset specialise.
+
+Au-dela du benchmarking, le developpement du dashboard Streamlit a ete l'occasion
+de confronter nos modeles a des cas d'usage concrets (analyse en temps reel,
+traitement par lot, explicabilite) et de resoudre des problemes d'ingenierie
+logicielle non triviaux (gestion GPU, integration Web Speech API, synchronisation
+JavaScript-Python).
+
+Parmi les pistes d'amelioration, on peut envisager l'elargissement du dataset
+d'entrainement (SEC filings, earnings call transcripts), l'experimentation avec
+des modeles plus recents comme DeBERTa ou des approches few-shot a base de LLMs,
+et le deploiement du dashboard sur une infrastructure cloud avec une API REST
+pour un acces plus large.
+
+% ════════════════════════════════════════════════════════════════════
+\section*{References}
+% ════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+  \item Malo, P., Sinha, A., Korhonen, P., Wallenius, J., \& Takala, P. (2014).
+    Good debt or bad debt: Detecting semantic orientations in economic texts.
+    \emph{Journal of the Association for Information Science and Technology},
+    65(4), 782--796.
+  \item Araci, D. (2019). FinBERT: Financial Sentiment Analysis with Pre-trained
+    Language Models. \emph{arXiv preprint arXiv:1908.10063}.
+  \item Devlin, J., Chang, M.-W., Lee, K., \& Toutanova, K. (2019). BERT:
+    Pre-training of Deep Bidirectional Transformers for Language Understanding.
+    \emph{Proceedings of NAACL-HLT}.
+  \item Vaswani, A., Shazeer, N., Parmar, N., et al. (2017). Attention Is All
+    You Need. \emph{Advances in Neural Information Processing Systems (NeurIPS)}.
+  \item Sanh, V., Debut, L., Chaumond, J., \& Wolf, T. (2019). DistilBERT, a
+    distilled version of BERT: smaller, faster, cheaper and lighter.
+    \emph{arXiv preprint arXiv:1910.01108}.
+  \item Ribeiro, M. T., Singh, S., \& Guestrin, C. (2016). ``Why Should I Trust
+    You?'': Explaining the Predictions of Any Classifier. \emph{KDD}.
+\end{enumerate}
+
+\end{document}
