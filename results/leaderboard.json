@@ -1,0 +1,68 @@
+[
+  {
+    "model": "TF-IDF + LogReg",
+    "accuracy": 0.7237,
+    "f1_macro": 0.6009,
+    "f1_weighted": 0.6919,
+    "type": "classical",
+    "train_time_s": 0.68,
+    "inference_time_s": 0.0,
+    "params": "TF-IDF features + LR"
+  },
+  {
+    "model": "TF-IDF + NaiveBayes",
+    "accuracy": 0.7134,
+    "f1_macro": 0.6268,
+    "f1_weighted": 0.6967,
+    "type": "classical",
+    "train_time_s": 0.0,
+    "inference_time_s": 0.0,
+    "params": "TF-IDF features + MultinomialNB"
+  },
+  {
+    "model": "BiLSTM",
+    "accuracy": 0.6371,
+    "f1_macro": 0.3728,
+    "f1_weighted": 0.5603,
+    "type": "deep_learning",
+    "train_time_s": 40.6,
+    "inference_time_s": 1.5033,
+    "params": "0",
+    "epochs_run": 6
+  },
+  {
+    "model": "DistilBERT",
+    "accuracy": 0.868,
+    "f1_macro": 0.86,
+    "f1_weighted": 0.8674,
+    "type": "transformer",
+    "hf_model": "distilbert-base-uncased",
+    "train_time_s": 50.7,
+    "inference_time_s": 0.6973,
+    "params": "66,955,779"
+  },
+  {
+    "model": "BERT",
+    "accuracy": 0.8546,
+    "f1_macro": 0.8376,
+    "f1_weighted": 0.8541,
+    "type": "transformer",
+    "hf_model": "bert-base-uncased",
+    "train_time_s": 111.1,
+    "inference_time_s": 1.2209,
+    "params": "109,484,547",
+    "peak_gpu_mb": "2050 MB"
+  },
+  {
+    "model": "FinBERT",
+    "accuracy": 0.8814,
+    "f1_macro": 0.8766,
+    "f1_weighted": 0.8827,
+    "type": "transformer",
+    "hf_model": "ProsusAI/finbert",
+    "train_time_s": 81.9,
+    "inference_time_s": 1.2609,
+    "params": "109,484,547",
+    "peak_gpu_mb": "2050 MB"
+  }
+]

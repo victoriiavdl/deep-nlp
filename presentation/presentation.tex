@@ -1,0 +1,358 @@
+\documentclass[aspectratio=169, 11pt]{beamer}
+
+% ── Theme & colors ──────────────────────────────────────────────────
+\usetheme{Madrid}
+\usecolortheme{whale}
+\definecolor{paris1blue}{RGB}{0,61,121}
+\definecolor{accent}{RGB}{59,130,246}
+\setbeamercolor{structure}{fg=paris1blue}
+\setbeamercolor{title}{fg=white, bg=paris1blue}
+\setbeamercolor{frametitle}{fg=white, bg=paris1blue}
+\setbeamercolor{block title}{bg=paris1blue, fg=white}
+\setbeamercolor{block body}{bg=paris1blue!5}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{%
+  \leavevmode\hbox{%
+    \begin{beamercolorbox}[wd=.33\paperwidth,ht=2.5ex,dp=1ex,center]{author in head/foot}%
+      \usebeamerfont{author in head/foot}\insertshortauthor
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.34\paperwidth,ht=2.5ex,dp=1ex,center]{title in head/foot}%
+      \usebeamerfont{title in head/foot}\insertshorttitle
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.33\paperwidth,ht=2.5ex,dp=1ex,right]{date in head/foot}%
+      \usebeamerfont{date in head/foot}\insertframenumber{} / \inserttotalframenumber\hspace*{2ex}
+    \end{beamercolorbox}}%
+}
+
+% ── Packages ────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\scriptsize, breaklines=true, frame=single, backgroundcolor=\color{gray!5}}
+
+% ── Metadata ────────────────────────────────────────────────────────
+\title[Sentiment Analysis]{Analyse de Sentiment sur Textes Financiers}
+\subtitle{Benchmarking Classical ML, Deep Learning et Transformers}
+\author[Majed \& Vidal]{Houssem \textsc{Majed} \and Victoria \textsc{Vidal}}
+\institute[Paris 1]{Universit\'e Paris 1 Panth\'eon-Sorbonne\\Master MoSEF -- Deep Learning / NLP}
+\date{Avril 2026}
+
+\begin{document}
+
+% ════════════════════════════════════════════════════════════════════
+% PAGE DE GARDE
+% ════════════════════════════════════════════════════════════════════
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+
+\begin{frame}{Plan}
+  \tableofcontents
+\end{frame}
+
+% ════════════════════════════════════════════════════════════════════
+\section{Introduction}
+% ════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Contexte et objectifs}
+  \begin{block}{Problematique}
+    Les marches financiers produisent un volume massif de textes (communiques de presse,
+    rapports d'analystes, depeches). Classifier automatiquement le sentiment de ces
+    textes permet d'extraire un signal utile pour l'aide a la decision.
+  \end{block}
+  \vspace{0.3cm}
+  \textbf{Objectif du projet :} comparer trois generations d'approches NLP sur une
+  tache de classification de sentiment financier en trois classes (positif, neutre, negatif).
+  \vspace{0.3cm}
+  \begin{itemize}
+    \item Classical ML (TF-IDF + classifieurs lineaires)
+    \item Deep Learning (BiLSTM)
+    \item Transformers (BERT, DistilBERT, FinBERT)
+  \end{itemize}
+\end{frame}
+
+% ════════════════════════════════════════════════════════════════════
+\section{Dataset}
+% ════════════════════════════════════════════════════════════════════
+
+\begin{frame}{FinancialPhraseBank}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{Source :} Malo et al. (2014), JASIST 65(4).\\[6pt]
+      4\,846 phrases extraites de communiques financiers en anglais,
+      annotees par 16 experts selon le point de vue d'un investisseur.\\[6pt]
+      \textbf{Question d'annotation :}\\
+      \emph{``Cette phrase donne-t-elle une impression positive,
+      negative ou neutre de l'entreprise mentionnee ?''}\\[6pt]
+      Seules les phrases avec \textbf{accord majoritaire} (>50\%) sont incluses.
+    \end{column}
+    \begin{column}{0.4\textwidth}
+      \begin{table}
+        \centering\small
+        \begin{tabular}{lrr}
+          \toprule
+          Classe   & Nombre & Part \\
+          \midrule
+          Neutral  & 2\,879 & 59.4\% \\
+          Positive & 1\,363 & 28.1\% \\
+          Negative &    604 & 12.5\% \\
+          \bottomrule
+        \end{tabular}
+      \end{table}
+      \vspace{0.3cm}
+      {\small\textcolor{red}{Desequilibre important :}\\la classe negative ne represente que 12.5\% du jeu.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Protocole experimental}
+  \begin{block}{Split stratifie}
+    70\% train / 10\% validation / 20\% test --- seed=42, stratifie par classe.
+  \end{block}
+  \vspace{0.3cm}
+  \textbf{Metrique principale : Macro-F1}
+  \begin{itemize}
+    \item Moyenne equitable du F1 par classe
+    \item La classe \emph{negative} (12.5\%) pese autant que \emph{neutral} (59.4\%)
+    \item Un modele predisant toujours ``neutral'' obtiendrait 59\% d'accuracy mais un macro-F1 proche de 0
+  \end{itemize}
+  \vspace{0.3cm}
+  \textbf{Metrique secondaire : Accuracy} --- reportee pour reference, mais trompeuse sur donnees desequilibrees.
+\end{frame}
+
+% ════════════════════════════════════════════════════════════════════
+\section{Modeles developpes}
+% ════════════════════════════════════════════════════════════════════
+
+\begin{frame}{1. Classical ML --- TF-IDF + Classifieurs}
+  \textbf{Pipeline :} texte $\rightarrow$ vecteurs TF-IDF creux (unigrammes + bigrammes, 20K features, TF sublineaire) $\rightarrow$ classifieur.
+  \vspace{0.3cm}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Logistic Regression}
+      \begin{itemize}
+        \item Regularisation L2, solver lbfgs
+        \item Rapide a entrainer (<1s)
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Naive Bayes}
+      \begin{itemize}
+        \item MultinomialNB, alpha=0.1
+        \item Hypothese d'independance naive
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \vspace{0.5cm}
+  \textbf{Avantages :} rapide, interpretable, pas de GPU necessaire.\\
+  \textbf{Limites :} ignore l'ordre des mots, le contexte et la semantique.
+\end{frame}
+
+\begin{frame}{2. Deep Learning --- Bidirectional LSTM}
+  \textbf{Architecture :} Embedding (64d, 15K vocab) $\rightarrow$ BiLSTM 2 couches (128 unites) $\rightarrow$ Dense $\rightarrow$ Softmax.
+  \vspace{0.3cm}
+  \begin{itemize}
+    \item Entrainement : 20 epochs, batch size 32, Adam optimizer
+    \item Early stopping sur la loss de validation
+    \item Entrainement sur CPU et GPU (~40s)
+  \end{itemize}
+  \vspace{0.3cm}
+  \textbf{Avantages :} capture l'ordre des mots et les dependances locales.\\[6pt]
+  \textbf{Limites :} sans pre-entrainement et avec seulement 5K exemples, le modele ne generalise pas sur la classe minoritaire (0\% recall sur \emph{negative}).
+\end{frame}
+
+\begin{frame}{3. Transformers --- BERT, DistilBERT, FinBERT}
+  \textbf{Principe :} modeles pre-entraines sur de larges corpus, fine-tunes sur notre dataset.
+  \vspace{0.3cm}
+  \begin{columns}[T]
+    \begin{column}{0.32\textwidth}
+      \textbf{BERT}\\[3pt]
+      {\small 110M params\\Pre-entraine sur BookCorpus + Wikipedia\\Fine-tuning : 5 epochs, lr=2e-5}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \textbf{DistilBERT}\\[3pt]
+      {\small 66M params\\Version distillee de BERT (40\% plus legere)\\Meme hyperparametres}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \textbf{FinBERT}\\[3pt]
+      {\small 110M params\\Further pre-entraine sur corpus financier\\Comprend : \emph{restructuring}, \emph{write-down}, \emph{impairment}...}
+    \end{column}
+  \end{columns}
+  \vspace{0.4cm}
+  \textbf{Optimisations GPU :} fp16, gradient checkpointing, VRAM cap a 85\%, gradient accumulation.
+\end{frame}
+
+% ════════════════════════════════════════════════════════════════════
+\section{Implementation}
+% ════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Architecture du projet}
+  \begin{columns}[T]
+    \begin{column}{0.45\textwidth}
+      \textbf{Structure modulaire :}
+      \begin{itemize}
+        \item \texttt{src/config.py} : chemins, hyperparametres, registre des modeles
+        \item \texttt{src/data.py} : chargement, nettoyage, split stratifie
+        \item \texttt{src/metrics.py} : evaluation (accuracy, macro-F1, weighted-F1)
+        \item \texttt{src/inference.py} : chargement modele, pipeline HuggingFace, prediction
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Scripts d'entrainement :}
+      \begin{itemize}
+        \item \texttt{train\_baselines.py} : TF-IDF + LogReg/NB
+        \item \texttt{train\_lstm.py} : BiLSTM via TensorFlow
+        \item \texttt{train\_transformer.py} : BERT/DistilBERT/FinBERT
+        \item \texttt{build\_leaderboard.py} : agregation des resultats
+      \end{itemize}
+      \vspace{0.3cm}
+      \textbf{Environnement :}\\
+      Python 3.11, uv, PyTorch 2.11+cu128,\\
+      GPU NVIDIA RTX 5070 Laptop (8 Go VRAM)
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ════════════════════════════════════════════════════════════════════
+\section{Resultats}
+% ════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Benchmark comparatif}
+  \begin{table}
+    \centering
+    \begin{tabular}{clcccc}
+      \toprule
+      Rang & Modele & Accuracy & Macro-F1 & Type & Temps \\
+      \midrule
+      1 & \textbf{FinBERT}    & 88.1\% & \textbf{87.7\%} & Transformer & 82s \\
+      2 & DistilBERT           & 86.8\% & 86.0\% & Transformer & 51s \\
+      3 & BERT                 & 85.5\% & 83.8\% & Transformer & 111s \\
+      4 & TF-IDF + NaiveBayes  & 71.3\% & 62.7\% & Classical   & <1s \\
+      5 & TF-IDF + LogReg      & 72.4\% & 60.1\% & Classical   & <1s \\
+      6 & BiLSTM               & 63.7\% & 37.3\% & Deep Learning & 41s \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+  \vspace{0.3cm}
+  \begin{block}{Observations cles}
+    \begin{itemize}
+      \item Le pre-entrainement sur corpus financier (FinBERT) donne un avantage net
+      \item DistilBERT surpasse BERT complet (moins d'overfitting avec peu de donnees)
+      \item Les baselines ont une accuracy correcte mais echouent sur la classe minoritaire
+      \item Le BiLSTM ne generalise pas sans pre-entrainement
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+% ════════════════════════════════════════════════════════════════════
+\section{Dashboard Streamlit}
+% ════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Fonctionnalites du dashboard}
+  \textbf{Interface web construite avec Streamlit}, deployee localement.
+  \vspace{0.3cm}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Analyze}
+      \begin{itemize}
+        \item Prediction avec un modele au choix
+        \item Comparaison multi-modeles cote a cote
+        \item Explicabilite LIME (mots cles)
+      \end{itemize}
+      \vspace{0.2cm}
+      \textbf{Batch Analysis}
+      \begin{itemize}
+        \item Upload CSV de headlines
+        \item Classification en masse
+        \item Export des resultats
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Live News (Yahoo Finance)}
+      \begin{itemize}
+        \item API \texttt{yfinance} pour les headlines
+        \item Analyse de sentiment en temps reel
+        \item Jauge de sentiment global
+      \end{itemize}
+      \vspace{0.2cm}
+      \textbf{Entree vocale}
+      \begin{itemize}
+        \item Web Speech API (Chrome/Edge)
+        \item Injection JS dans le contexte parent
+        \item Transcription live dans le textarea
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{API Yahoo Finance et entree vocale}
+  \begin{block}{Integration yfinance}
+    On utilise la librairie \texttt{yfinance} pour recuperer les titres d'actualite
+    associes a un ticker boursier (AAPL, TSLA, MSFT...). Chaque headline est ensuite
+    passee dans le pipeline de prediction du modele actif. On calcule un score de
+    sentiment global (proportion positifs $-$ negatifs) pour fournir un indicateur
+    synthetique.
+  \end{block}
+  \vspace{0.3cm}
+  \begin{block}{Web Speech API}
+    L'entree vocale utilise la Web Speech API du navigateur. Le defi technique principal
+    etait que Streamlit execute les composants HTML dans des iframes sandboxes, sans
+    acces au micro. La solution retenue injecte un script dans le document parent via
+    \texttt{components.html()}, ce qui permet au \texttt{SpeechRecognition} de s'executer
+    dans le bon contexte avec les permissions navigateur.
+  \end{block}
+\end{frame}
+
+% ════════════════════════════════════════════════════════════════════
+\section{Difficultes rencontrees}
+% ════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Difficultes techniques}
+  \begin{enumerate}
+    \item \textbf{Gestion de la VRAM} --- Le fine-tuning de BERT (110M params) sur une
+      RTX 5070 (8 Go) a necessite fp16, gradient checkpointing et un cap memoire a 85\%.
+      Sans ces optimisations, les modeles depassaient la memoire GPU.
+    \item \textbf{PyTorch CUDA sur Windows} --- L'installation via \texttt{pip install torch}
+      donne une version CPU-only. Il a fallu configurer un index PyTorch specifique
+      (\texttt{pytorch-cu128}) dans \texttt{pyproject.toml}.
+    \item \textbf{Entree vocale dans Streamlit} --- Les iframes Streamlit bloquent l'acces
+      micro. Plusieurs approches ont echoue (\texttt{st\_javascript}, \texttt{components.html}
+      directement) avant de trouver la solution d'injection dans le contexte parent.
+    \item \textbf{Synchronisation etat Streamlit/DOM} --- Les modifications du textarea par
+      JavaScript ne mettaient pas a jour l'etat interne de Streamlit. Resolution via le
+      setter React natif et les callbacks \texttt{on\_click}.
+    \item \textbf{Desequilibre des classes} --- Le BiLSTM predisait systematiquement
+      ``neutral'', obtenant 0\% recall sur \emph{negative}. Ce comportement a confirme
+      l'importance du pre-entrainement.
+  \end{enumerate}
+\end{frame}
+
+% ════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+% ════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Conclusion et perspectives}
+  \begin{block}{Bilan}
+    FinBERT domine le benchmark (87.7\% macro-F1) grace a son pre-entrainement
+    sur corpus financier. L'ecart avec les baselines classiques confirme que le
+    transfert de connaissances est decisif sur un petit jeu de donnees specialise.
+  \end{block}
+  \vspace{0.3cm}
+  \textbf{Perspectives :}
+  \begin{itemize}
+    \item Elargir le dataset (SEC filings, earnings calls)
+    \item Tester des modeles plus recents (DeBERTa, LLMs few-shot)
+    \item Deploiement cloud avec API REST
+    \item Analyse multi-langue (francais, allemand)
+  \end{itemize}
+  \vspace{0.5cm}
+  \centering\large
+  \textbf{Merci de votre attention.}
+\end{frame}
+
+\end{document}

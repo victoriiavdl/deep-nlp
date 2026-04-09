@@ -1,0 +1,12 @@
+# Model Leaderboard
+
+Sorted by **macro-F1** (descending).
+
+|   rank | model               |   accuracy |   f1_macro |   f1_weighted | type          |   train_time_s |   inference_time_s | params                          |   epochs_run | hf_model                | peak_gpu_mb   |
+|-------:|:--------------------|-----------:|-----------:|--------------:|:--------------|---------------:|-------------------:|:--------------------------------|-------------:|:------------------------|:--------------|
+|      1 | FinBERT             |     0.8814 |     0.8766 |        0.8827 | transformer   |          81.9  |             1.2609 | 109,484,547                     |          nan | ProsusAI/finbert        | 2050 MB       |
+|      2 | DistilBERT          |     0.868  |     0.86   |        0.8674 | transformer   |          50.7  |             0.6973 | 66,955,779                      |          nan | distilbert-base-uncased | nan           |
+|      3 | BERT                |     0.8546 |     0.8376 |        0.8541 | transformer   |         111.1  |             1.2209 | 109,484,547                     |          nan | bert-base-uncased       | 2050 MB       |
+|      4 | TF-IDF + NaiveBayes |     0.7134 |     0.6268 |        0.6967 | classical     |           0    |             0      | TF-IDF features + MultinomialNB |          nan | nan                     | nan           |
+|      5 | TF-IDF + LogReg     |     0.7237 |     0.6009 |        0.6919 | classical     |           0.68 |             0      | TF-IDF features + LR            |          nan | nan                     | nan           |
+|      6 | BiLSTM              |     0.6371 |     0.3728 |        0.5603 | deep_learning |          40.6  |             1.5033 | 0                               |            6 | nan                     | nan           |
