@@ -17,16 +17,13 @@ Benchmarking classical ML, deep learning, and transformer models on the [Financi
 │   ├── train_lstm.py              # Bidirectional LSTM (TensorFlow)
 │   ├── train_transformer.py       # DistilBERT / BERT / FinBERT (PyTorch)
 │   └── build_leaderboard.py       # Generate leaderboard from results
-├── notebooks/                     # Original exploratory notebooks (reference)
-│   ├���─ 01_eda.ipynb
-│   ├── 02_baseline.ipynb
-│   ├── 03_lstm.ipynb
-│   └── 04_finbert.ipynb
+├── presentation/                  # Beamer slides (.tex + .pdf)
+├── rapport/                       # Written report (.tex + .pdf)
 ├── results/                       # Training outputs (auto-generated)
 │   ├── leaderboard.json           # Machine-readable results
 │   ├── leaderboard.csv            # Sorted table
 │   └── leaderboard.md             # Markdown table
-├── app.py                         # Gradio demo interface
+├── streamlit_app.py               # Streamlit dashboard
 ├── setup.bat                      # One-click environment setup (Windows)
 ├── run.bat                        # Command runner (Windows)
 ├── pyproject.toml                 # Project metadata & dependencies
@@ -167,17 +164,19 @@ Reads `results/leaderboard.json` and generates:
 - `results/leaderboard.md` — formatted Markdown table
 - Console output with the ranked table
 
-### 5. Launch Demo
+### 5. Launch Dashboard
 
 ```
-run.bat app.py
+run.bat -m streamlit run streamlit_app.py
 ```
 
-Opens a Gradio interface at `http://localhost:7860` with:
-- Real-time sentiment prediction for any financial headline
-- Confidence scores for all three classes
-- Model leaderboard, dataset overview, and methodology tabs
-- Example headlines to try
+Opens a Streamlit dashboard at `http://localhost:8501` with:
+- Real-time sentiment prediction with LIME explainability
+- Model comparison across all 6 models
+- Batch analysis via CSV upload
+- Live financial news sentiment (Yahoo Finance)
+- Model leaderboard with interactive charts
+- Embedded presentation slides and report
 
 The app loads the best available fine-tuned model (FinBERT > BERT > DistilBERT).
 
@@ -228,6 +227,4 @@ All hyperparameters and paths are centralized in `src/config.py`. Key settings:
 
 ## Notes
 
-- The original Jupyter notebooks in `notebooks/` are preserved as reference and for interactive exploration.
-- The root notebook `nlp-financial-news-sentiment-analysis.ipynb` is the original Kaggle notebook (reference only).
 - The `FinancialPhraseBank/` directory contains the original dataset files at different agreement levels.
