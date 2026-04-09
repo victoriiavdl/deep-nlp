@@ -1,5 +1,6 @@
 """Streamlit app — Financial News Sentiment Analysis."""
 
+import base64
 import functools
 import io
 import json
@@ -1180,21 +1181,143 @@ elif page == "Rendu":
         "Slides de presentation et rapport ecrit du projet.",
     )
 
-    col_s, col_r2 = st.columns(2, gap="large")
-    with col_s:
-        st.markdown(
-            '<div class="card" style="text-align:center; padding:40px 24px;">'
-            '<div style="font-size:32px; margin-bottom:12px;">&#x1F4CA;</div>'
-            '<h3 style="margin:0 0 8px;">Slides de presentation</h3>'
-            '<p style="color:#64748b; font-size:14px; margin:0;">Les slides seront ajoutees ici une fois finalisees.</p>'
-            '</div>', unsafe_allow_html=True)
-    with col_r2:
-        st.markdown(
-            '<div class="card" style="text-align:center; padding:40px 24px;">'
-            '<div style="font-size:32px; margin-bottom:12px;">&#x1F4DD;</div>'
-            '<h3 style="margin:0 0 8px;">Rapport Overleaf</h3>'
-            '<p style="color:#64748b; font-size:14px; margin:0;">Le rapport LaTeX (Overleaf) sera ajoute ici une fois finalise.</p>'
-            '</div>', unsafe_allow_html=True)
+    _PDF_FILES = [
+        ("Slides de presentation", Path("presentation/presentation_deep_nlp.pdf")),
+        ("Rapport", Path("rapport/rapport_deep_nlp.pdf")),
+    ]
+
+    for _pdf_title, _pdf_path in _PDF_FILES:
+        if _pdf_path.exists():
+            _pdf_bytes = _pdf_path.read_bytes()
+            _pdf_b64 = base64.b64encode(_pdf_bytes).decode()
+            _uid = _pdf_title.replace(" ", "_").lower()
+            components.html(
+                f"""
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+                <style>
+                    * {{ margin:0; padding:0; box-sizing:border-box; }}
+                    body {{ background:transparent; }}
+                    #wrap_{_uid} {{
+                        background:#1e293b;
+                        border-radius:10px;
+                        overflow:hidden;
+                        border:1px solid #334155;
+                        font-family:Inter,system-ui,sans-serif;
+                    }}
+                    #bar_{_uid} {{
+                        display:flex; justify-content:space-between; align-items:center;
+                        padding:8px 16px; background:#0f172a;
+                        border-bottom:1px solid #334155;
+                    }}
+                    #bar_{_uid} .title {{ color:#94a3b8; font-size:13px; font-weight:500; }}
+                    #bar_{_uid} .nav {{ display:flex; align-items:center; gap:6px; }}
+                    #bar_{_uid} .nav button {{
+                        background:#334155; color:#e2e8f0; border:none;
+                        padding:5px 12px; border-radius:5px; cursor:pointer;
+                        font-size:12px; font-family:inherit;
+                    }}
+                    #bar_{_uid} .nav button:disabled {{ opacity:0.35; cursor:default; }}
+                    #bar_{_uid} .nav span {{ color:#94a3b8; font-size:12px; min-width:60px; text-align:center; }}
+                    #bar_{_uid} .fs {{
+                        background:linear-gradient(135deg,#6366f1,#8b5cf6);
+                        color:#fff; border:none; padding:6px 14px;
+                        border-radius:6px; cursor:pointer;
+                        font-size:12px; font-weight:500; font-family:inherit;
+                    }}
+                    #view_{_uid} {{
+                        height:550px; overflow:auto;
+                        display:flex; justify-content:center; align-items:flex-start;
+                        background:#4a5568;
+                    }}
+                    #view_{_uid} canvas {{ display:block; }}
+                </style>
+                <div id="wrap_{_uid}">
+                    <div id="bar_{_uid}">
+                        <span class="title">{_pdf_title}</span>
+                        <div class="nav">
+                            <button id="prev_{_uid}" onclick="go_{_uid}(-1)">Prev</button>
+                            <span id="info_{_uid}">...</span>
+                            <button id="next_{_uid}" onclick="go_{_uid}(1)">Next</button>
+                        </div>
+                        <button class="fs" onclick="full_{_uid}()">Fullscreen</button>
+                    </div>
+                    <div id="view_{_uid}">
+                        <canvas id="cv_{_uid}"></canvas>
+                    </div>
+                </div>
+                <script>
+                (function() {{
+                    var pdfjsLib = window["pdfjs-dist/build/pdf"];
+                    pdfjsLib.GlobalWorkerOptions.workerSrc =
+                        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+                    var pdfDoc = null, pg = 1, rendering = false, pending = null;
+                    var cv = document.getElementById("cv_{_uid}");
+                    var ctx = cv.getContext("2d");
+                    var viewer = document.getElementById("view_{_uid}");
+
+                    function render(num) {{
+                        rendering = true;
+                        pdfDoc.getPage(num).then(function(page) {{
+                            var w = viewer.clientWidth - 16;
+                            var vp1 = page.getViewport({{ scale: 1 }});
+                            var scale = w / vp1.width;
+                            var vp = page.getViewport({{ scale: scale }});
+                            cv.width = vp.width;
+                            cv.height = vp.height;
+                            page.render({{ canvasContext: ctx, viewport: vp }}).promise.then(function() {{
+                                rendering = false;
+                                if (pending !== null) {{ render(pending); pending = null; }}
+                            }});
+                            document.getElementById("info_{_uid}").textContent =
+                                num + " / " + pdfDoc.numPages;
+                            document.getElementById("prev_{_uid}").disabled = (num <= 1);
+                            document.getElementById("next_{_uid}").disabled = (num >= pdfDoc.numPages);
+                        }});
+                    }}
+
+                    window.go_{_uid} = function(d) {{
+                        var n = pg + d;
+                        if (n < 1 || n > pdfDoc.numPages) return;
+                        pg = n;
+                        if (rendering) {{ pending = pg; }} else {{ render(pg); }}
+                    }};
+
+                    window.full_{_uid} = function() {{
+                        var el = document.getElementById("wrap_{_uid}");
+                        if (!document.fullscreenElement) {{
+                            el.requestFullscreen().then(function() {{
+                                viewer.style.height = "calc(100vh - 45px)";
+                                setTimeout(function() {{ render(pg); }}, 150);
+                            }});
+                        }} else {{
+                            document.exitFullscreen();
+                        }}
+                    }};
+
+                    document.addEventListener("fullscreenchange", function() {{
+                        if (!document.fullscreenElement) {{
+                            viewer.style.height = "550px";
+                            setTimeout(function() {{ render(pg); }}, 150);
+                        }}
+                    }});
+
+                    // Decode base64 and load
+                    var raw = atob("{_pdf_b64}");
+                    var arr = new Uint8Array(raw.length);
+                    for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+                    pdfjsLib.getDocument({{ data: arr }}).promise.then(function(pdf) {{
+                        pdfDoc = pdf;
+                        render(1);
+                    }});
+                }})();
+                </script>
+                """,
+                height=610,
+            )
+            st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
+        else:
+            st.warning(f"Fichier introuvable : {_pdf_path}")
 
 
 # ══════════════════════════════════════════════════════════════════════
