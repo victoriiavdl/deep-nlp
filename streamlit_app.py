@@ -71,6 +71,15 @@ for name in ["FinBERT", "BERT", "DistilBERT"]:
     if p.exists() and (p / "config.json").exists():
         AVAILABLE_MODELS[name] = p
 
+HF_FALLBACK_MODELS = {
+    "FinBERT": "ProsusAI/finbert",
+    "DistilBERT": "distilbert-base-uncased-finetuned-sst-2-english",
+}
+
+if not AVAILABLE_MODELS:
+    for name, hf_id in HF_FALLBACK_MODELS.items():
+        AVAILABLE_MODELS[name] = hf_id
+
 MODEL_META = {
     "FinBERT":    {"desc": "Financial domain transformer",  "badge": "Best"},
     "BERT":       {"desc": "General-purpose transformer",   "badge": ""},
@@ -80,9 +89,9 @@ MODEL_META = {
 # ── Model loading (cached per model name) ────────────────────────────
 @st.cache_resource(show_spinner=False)
 def load_model(model_name: str):
-    path = AVAILABLE_MODELS[model_name]
-    tokenizer = AutoTokenizer.from_pretrained(str(path))
-    model = AutoModelForSequenceClassification.from_pretrained(str(path))
+    model_ref = str(AVAILABLE_MODELS[model_name])
+    tokenizer = AutoTokenizer.from_pretrained(model_ref)
+    model = AutoModelForSequenceClassification.from_pretrained(model_ref)
     device = get_device()
     pipe = build_pipeline(model, tokenizer, device)
     return pipe, device
