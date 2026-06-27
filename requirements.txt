@@ -7,4 +7,5 @@ pandas>=3.0.2
 plotly>=6.6.0
 lime>=0.2.0.1
 yfinance>=0.2.40
+tensorflow==2.17.0
 certifi
