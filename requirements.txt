@@ -1,0 +1,10 @@
+streamlit>=1.56.0
+streamlit-javascript>=0.1.5
+torch
+transformers>=5.5.0
+numpy>=2.4.4
+pandas>=3.0.2
+plotly>=6.6.0
+lime>=0.2.0.1
+yfinance>=0.2.40
+certifi
